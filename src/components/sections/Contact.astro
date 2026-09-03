@@ -1,0 +1,45 @@
+---
+import { siteConfig } from '../../lib/config';
+
+// 仅渲染已配置（value 非空）的站外链接
+const links = siteConfig.social.filter((link) => link.value !== '');
+---
+
+<section id="contact">
+  <div class="container">
+    <h2 class="section-title">
+      <span class="num text-pixel">04</span><span class="text-pixel">CONTACT</span> <span class="text-dim">联系</span>
+    </h2>
+    <div class="pixel-panel">
+      <p>想聊 AI 驱动的自动化 / 工程化 / 数据管道，或只想逛逛实验场？从下面找我：</p>
+      <ul class="links">
+        {
+          links.map((link) => (
+            <li>
+              <a
+                class="pixel-btn"
+                href={link.type === 'email' ? `mailto:${link.value}` : link.value}
+                target={link.type === 'email' ? undefined : '_blank'}
+                rel="noopener noreferrer"
+                data-sfx-role="click"
+              >
+                {link.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </div>
+</section>
+
+<style>
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0;
+  }
+</style>

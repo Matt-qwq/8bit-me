@@ -1,0 +1,120 @@
+---
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import CrtScanlines from '../components/CrtScanlines.astro';
+import SideDock from '../components/SideDock.astro';
+import Konami from '../components/Konami.astro';
+import SfxRoles from '../components/SfxRoles.astro';
+import CursorFx from '../components/CursorFx.astro';
+import BgFx from '../components/BgFx.astro';
+import PageTrans from '../components/PageTrans.astro';
+import { THEMES } from '../lib/themes';
+import { themePref } from '../lib/prefs';
+import { siteConfig } from '../lib/config';
+
+interface Props {
+  /** 页面独立 title（SEO，User Story 22） */
+  title?: string;
+  /** 页面独立 meta description（SEO） */
+  description?: string;
+  /** bg-fx 分区 scrim：true = index 首页（hero 首屏免遮，scrim 从 100vh 起） */
+  bgfxHeroVivid?: boolean;
+}
+
+const {
+  title = siteConfig.title,
+  description = siteConfig.description,
+  bgfxHeroVivid = false,
+} = Astro.props;
+
+/** 13 套主题色块（单一数据源 themes.ts → CSS，替代 global.css 手写块） */
+const themeCss = THEMES.map(
+  (t) =>
+    `:root[data-theme="${t.key}"]{--gb-0:${t.colors[0]};--gb-1:${t.colors[1]};--gb-2:${t.colors[2]};--gb-3:${t.colors[3]};}`
+).join('\n');
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <script is:inline define:vars={{ themeKey: themePref.key, themeKeys: THEMES.map((t) => t.key) }}>
+      // 主题预挂载（防 FOUC）：同步读 localStorage，在首帧样式应用前
+      // 把已存主题写到 <html data-theme>。
+      // 无记录 / 读取失败 / 脏数据 → 不设置，由 global.css :root 默认渲染 sms-surf。
+      try {
+        const saved = localStorage.getItem(themeKey);
+        if (saved && themeKeys.indexOf(saved) !== -1) {
+          document.documentElement.dataset.theme = saved;
+        }
+      } catch (err) {
+        // storage 不可用（隐私模式等）→ 保持默认主题
+      }
+    </script>
+    <style is:inline set:html={themeCss}></style>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href={`${import.meta.env.BASE_URL}favicon.svg`}
+    />
+    <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.ico`} />
+    {/* 子集化 Zpix 预加载：配合 font-display:block 消除 FOUT 抖动（字体文件仅 ~10KB） */}
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href={`${import.meta.env.BASE_URL}fonts/zpix.subset.woff2`}
+      crossorigin="anonymous"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {
+      Astro.site && (
+        <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site).href} />
+      )
+    }
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={siteConfig.title} />
+    {
+      Astro.site && (
+        <meta property="og:url" content={new URL(Astro.url.pathname, Astro.site).href} />
+      )
+    }
+  </head>
+  <body>
+    <BgFx heroVivid={bgfxHeroVivid} />
+    <Nav />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+    <CrtScanlines />
+    <SideDock />
+    <Konami />
+    <CursorFx />
+    <PageTrans />
+    <SfxRoles />
+    <script is:inline>
+      // 角点注入：给所有 .pixel-panel / .cover-block 补 4 个 .pp-pad 真实子元素。
+      // 伪元素不可 WAAPI 动画，故角标点亮需真实元素（形态由 global.css 控制）。
+      // 全站注入；点亮由各页入场脚本负责，未接入场脚本的页（blog/404）角点默认可见。
+      (function () {
+        var PAD = ['tl', 'tr', 'bl', 'br'];
+        document.querySelectorAll('.pixel-panel, .cover-block').forEach(function (host) {
+          if (host.querySelector('.pp-pad')) return;
+          PAD.forEach(function (c) {
+            var pad = document.createElement('span');
+            pad.className = 'pp-pad ' + c;
+            pad.setAttribute('aria-hidden', 'true');
+            host.appendChild(pad);
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

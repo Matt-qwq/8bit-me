@@ -1,0 +1,103 @@
+---
+import { siteConfig, url } from '../../lib/config';
+
+// level 0-5 → 8 段像素条（MAX_SEGMENTS 与 global.css .skill-bar 对齐）：
+// filled = floor(level / 5 * MAX_SEGMENTS)，与数值语义一致（3/5→4/8 格 50%、4/5→6/8 格 75%）
+const MAX_SEGMENTS = 8;
+---
+
+<section id="skills">
+  <div class="container">
+    <h2 class="section-title">
+      <span class="num text-pixel">03</span><span class="text-pixel">SKILLS</span> <span class="text-dim">技能履历</span>
+    </h2>
+    <div class="pixel-panel">
+      <ul class="skills">
+        {
+          siteConfig.skills.map((skill) => {
+            const filled = Math.floor((skill.level / 5) * MAX_SEGMENTS);
+            return (
+              <li class="row">
+                <span class="label">{skill.name}</span>
+                <span class="skill-bar" aria-label={`${skill.name}: ${skill.level}/5`}>
+                  {
+                    Array.from({ length: MAX_SEGMENTS }, (_, i) => (
+                      <i class={i < filled ? 'on' : ''}></i>
+                    ))
+                  }
+                </span>
+                <span class="level text-pixel"
+                  >{skill.level}<span class="sep">/</span>5</span
+                >
+              </li>
+            );
+          })
+        }
+      </ul>
+      <p class="note text-dim">
+        以上为自评概览（self-assessment）；证据链：方法论三篇
+        <a href={url('blog/2026-08-29-rpa-migration-methodology')}>RPA 迁移</a> /
+        <a href={url('blog/2026-08-29-data-pipeline-engineering')}>数据管道</a> /
+        <a href={url('blog/2026-08-29-reversing-unknown-internal-systems')}>黑盒逆向</a>
+        （均 Python 生态）+ 本站工程（TypeScript / Astro / Web Audio），
+        RPA 项另持影刀高级 RPA 技能证书；AI 辅助开发见 RPA 迁移方法论篇，
+        代码见 <a href="https://github.com/Matt-qwq" target="_blank" rel="noopener noreferrer">GitHub</a>。
+      </p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .skills {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 8rem 1fr auto;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .label {
+    font-size: 0.9rem;
+  }
+
+  .level {
+    font-size: 0.55rem;
+    color: var(--gb-2);
+  }
+
+  /* 斜杠压暗 + 留空：像素字体下「4/5」易被读成「45」 */
+  .level .sep {
+    color: var(--color-text-dim);
+    margin-inline: 0.2em;
+  }
+
+  .note {
+    margin-top: 1.25rem;
+    font-size: 0.85rem;
+  }
+
+  /* 脚注链接可见性：accent 色 + 2px 下划线（fix 无下划线+最亮色倒挂），hover 继承全局变 gb-3 */
+  .note a {
+    color: var(--color-accent);
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 560px) {
+    .row {
+      grid-template-columns: 1fr auto;
+    }
+    .label {
+      grid-column: 1 / -1;
+    }
+  }
+</style>

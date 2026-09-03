@@ -1,0 +1,41 @@
+---
+/**
+ * cover block（封面像素盒）：post.cover 的唯一展示件。
+ * - cover 缺失时的 fallback '▣' 集中在此，调用方不再各自 ?? '▣'
+ * - href 传入时渲染为链接（列表页复用，装饰性：aria-hidden + tabindex=-1）
+ * - 样式定义在 global.css（.cover-block），列表与单篇共用一份
+ * - 隐藏依赖：4 个角点 .pp-pad 由 BaseLayout 的 is:inline 脚本全站注入
+ *   （选择器 '.pixel-panel, .cover-block'），本组件模板不含角点元素——
+ *   改动 class 名会断掉角点注入。
+ */
+interface Props {
+  cover?: string;
+  /** 传入则渲染 <a>（列表页跳转用） */
+  href?: string;
+  /** md = 列表（随格子宽度填充，6rem 列）；lg = 单篇（固定 6rem，与 md 同尺寸，承接拇指图） */
+  size?: 'md' | 'lg';
+  /** 是否显示 COVER 像素角标（仅链接形态常用） */
+  showTag?: boolean;
+}
+
+const { cover, href, size = 'md', showTag = false } = Astro.props;
+const glyph = cover && cover.trim() !== '' ? cover : '▣';
+---
+
+{
+  href ? (
+    <a
+      href={href}
+      class={`cover-block ${size}`}
+      aria-hidden="true"
+      tabindex="-1"
+    >
+      <span class="cover-glyph">{glyph}</span>
+      {showTag && <span class="cover-tag text-pixel">COVER</span>}
+    </a>
+  ) : (
+    <span class={`cover-block ${size}`} aria-hidden="true">
+      <span class="cover-glyph">{glyph}</span>
+    </span>
+  )
+}

@@ -1,0 +1,16 @@
+# Netlify 构建配置（仓库声明式）
+# 环境变量在 Netlify 侧注入（ASTRO_BASE=/, ASTRO_SITE=https://8bit-me.netlify.app）。
+[build]
+  command = "npm run typecheck && npm run build"
+  publish = "dist"
+
+[build.environment]
+  # 构建输出缓存版本号：升级即强制 Netlify 重建（保险丝，非必需常驻）
+  CACHE_VERSION = "2026-08-27-v1"
+
+# HTML 不缓存：新部署立即对访客生效（曾出现边缘缓存把旧版 index.html
+# 喂给别名域名，导致新功能（Konami 彩蛋）延迟可见的坑）
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache"

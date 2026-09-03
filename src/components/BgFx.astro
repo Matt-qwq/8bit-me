@@ -1,0 +1,1083 @@
+---
+/**
+ * BgFx —— 全站页面背景 canvas 像素动画（v5：机器叙事默认底，08-31 全套件立项）。
+ * 挂载于 BaseLayout：固定视口装饰层，body 背景之上、页面内容之下，全路由统一。
+ *
+ * 可读性契约（readability seam）：canvas 与内容之间加 scrim 玻璃层（--gb-0 半透明），
+ * 保证正文/卡片在任何动画模式 + additive 辉光下可读。分区策略：
+ * - heroVivid（index 首页专用）：scrim 从 100vh 起（hero 首屏全亮免遮，向下自动进入保护）
+ * - 默认（content 模式）：scrim 整页覆盖（blog / 文章 / 404 等阅读页）
+ *
+ * 七模式：core（机箱内部·机器叙事默认，v5 新）+ 既有六模式（人工覆盖滤镜）
+ * - core：常驻 PCB 结构层（走线簇 + 芯片块，停帧即一张设计图）+ 低频事件层
+ *   （信号包沿走线流动 6-12s 一只 / 尘埃 15-25s 一颗 / 待机灯 1.6s 呼吸）
+ *   + 会话一次的开机仪式（走线级联上电 + LED 双闪）+ 事件响应
+ *   （click→reticket+信号包回传 / nav→汇聚 / Konami→全亮 / 主题→磷光再调谐）
+ * - stars/scan/rain/wave/grid：v4 保留原样，循环按钮人工覆盖
+ *
+ * 评审门（docs/specs/bgfx-acceptance-matrix.md）：单强调色（唯一活色 --gb-2）/
+ * 10s 窗口单焦点（编排时刻>散落特效）/ 静置密度预算（移动对象 ≤4）/ 时长档 /
+ * 停帧构图。时刻总线：src/lib/fx-moment.ts。
+ *
+ * 行为约定：
+ * - 循环按钮切换（与 CRT/SFX 同族，固定左下第二顺位），偏好持久化 '8bitme:bgfx'
+ * - 颜色读 :root --gb-*；主题切换经 MutationObserver 重读；深色主题用
+ *   additive（'lighter'）辉光，浅色主题退回 source-over（防洗白）
+ * - 音画联动：监听 '8bit:fx'（click→波纹 / nav→扫光 / hover→星火）；core 下转机器响应
+ * - prefers-reduced-motion：不冻结，降频半速（cadence）；core 事件层自然降频
+ * - 性能：dpr ≤1.5、粒子数随面积裁剪、标签页隐藏停帧（固定背景恒在视口，无滚动淡出）
+ */
+
+interface Props {
+  /** true = index 首页：hero 首屏免遮，scrim 从 100vh 起；false = 阅读页：整页压暗 */
+  heroVivid?: boolean;
+}
+
+const { heroVivid = false } = Astro.props;
+---
+
+<div class="bgfx-canvas" data-vivid={heroVivid ? '1' : null} aria-hidden="true">
+  <canvas id="bgfx-canvas"></canvas>
+</div>
+
+{/* 可读性 scrim：canvas（z -1）之上、内容之下；heroVivid 时 hero 首屏免遮 */}
+<div class:list={['bgfx-scrim', { 'hero-vivid': heroVivid }]} aria-hidden="true"></div>
+
+{/* 按钮已迁到 SideDock.astro（侧边折叠仓）。此处只留 canvas + scrim 全屏层。
+    BgFx 通过 bgfxPref('8bitme:bgfx') 与 dock 通信：dock 写入新模式后，
+    下面 frame() 头部轮询发现差异 → 切换 mode + 重画。 */}
+
+<script>
+  import { bgfxPref } from '../lib/prefs';
+  import { hexToRgba, type Palette } from '../lib/palette';
+  import { createFxRuntime, setAdditive, type FxRuntimeHost } from '../lib/fx-runtime';
+  import { bootOnce, createMomentGate, nextInRange, phosphorDecay } from '../lib/fx-moment';
+  import {
+    coreGlow,
+    dustSpawn,
+    genSectionTargets,
+    easeSilk,
+    mix,
+    cameraFor,
+    chipPins,
+    SECTION_IDS,
+    ledPhase,
+    packetPos,
+    rainColumns,
+    rainLengthRange,
+    scanTailAlpha,
+    scanThickness,
+    scrimCoverage,
+    starCount,
+    starViewY,
+    waveAmplitude,
+    type MachineChip,
+    type MachineTrace,
+    type SectionId,
+    type TraceSeg,
+  } from '../lib/bgfx-motion';
+
+  const MODES = [
+    'off',
+    'core',
+    'stars',
+    'scan',
+    'rain',
+    'wave',
+    'grid',
+  ] as const;
+  type Mode = (typeof MODES)[number];
+  const LABELS: Record<Mode, string> = {
+    off: 'OFF',
+    core: 'CORE',
+    stars: 'STARS',
+    scan: 'SCAN',
+    rain: 'RAIN',
+    wave: 'WAVE',
+    grid: 'GRID',
+  };
+  const TITLES: Record<Mode, string> = {
+    off: '关闭背景特效',
+    core: '机箱核心（机器叙事默认）',
+    stars: '星尘浮游',
+    scan: '扫描波纹',
+    rain: '像素雨',
+    wave: '合成波形',
+    grid: '透视网格',
+  };
+  const DEFAULT_MODE: Mode = 'off'; // v6 电路化：背景退场，氛围交给 UI 线条本身（core 留手动）
+
+  const wrap = document.querySelector<HTMLElement>('.bgfx-canvas')!;
+  const scrim = document.querySelector<HTMLElement>('.bgfx-scrim');
+  const canvas = document.getElementById('bgfx-canvas') as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d')!;
+
+  let mode: Mode = normalize(bgfxPref.get());
+  // 验收展示档：?show 强制 core + 重播开机仪式 + 事件加速（无视旧偏好；生产无参不达此分支）
+  const SHOW_MODE = new URLSearchParams(location.search).has('show');
+  if (SHOW_MODE) {
+    try {
+      sessionStorage.removeItem('8bitme:boot');
+    } catch {
+      /* ignore */
+    }
+    mode = 'core';
+  }
+  let t = 0;
+  let frame = 0;
+  let w = 0;
+  let h = 0;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  let cadence = reduced.matches ? 2 : 1;
+
+  // ---- 配色（fx runtime 提供 palette + additive 门控；[data-theme] 跟随在运行时） ----
+  const host: FxRuntimeHost = {
+    getSize: () => {
+      const r = wrap.getBoundingClientRect();
+      return { width: r.width, height: r.height };
+    },
+    // 固定背景层恒在视口：不再需要 IntersectionObserver 门控
+    shouldRun: () => true,
+    frame: () => {
+      // 模式同步：dock 写 bgfxPref → 我们读最新值并比对当前 mode
+      const live = normalize(bgfxPref.get());
+      if (live !== mode) {
+        mode = live;
+        apply();
+        rt.sync();
+      }
+      if (frame % cadence === 0) {
+        t += 1;
+        step();
+      }
+      draw();
+      frame += 1;
+    },
+    onTheme: (p, a) => {
+      palette = p;
+      additive = a;
+      styles = buildStyles();
+      // 磷光再调谐：主题切换瞬间短促增亮（0.4s），steps 衰减回地板
+      retuneT = 24;
+    },
+    onResize: ({ width, height }) => {
+      w = width;
+      h = height;
+      seed();
+    },
+  };
+  const rt = createFxRuntime(canvas, host);
+  let palette: Palette = rt.palette;
+  let styles = buildStyles();
+  let additive = rt.additive;
+
+  /** 每模式预生成样式串（避免逐帧拼字符串） */
+  function buildStyles() {
+    const { accent, light, bg } = palette;
+    return {
+      starHalo: hexToRgba(accent, 0.22),
+      starCore: hexToRgba(accent, 0.9),
+      starBack: hexToRgba(light, 0.32),
+      streak: hexToRgba(light, 0.85),
+      streakTail: hexToRgba(accent, 0.35),
+      scanHalo: hexToRgba(accent, 0.14),
+      scanBand: hexToRgba(accent, 0.18),
+      scanLead: hexToRgba(light, 0.6),
+      rainHead: hexToRgba(light, 0.9),
+      rainBody: hexToRgba(accent, 0.55),
+      rainBodyB: hexToRgba(light, 0.4),
+      waveCore: hexToRgba(light, 0.85),
+      waveHalo: hexToRgba(accent, 0.16),
+      waveMirror: hexToRgba(accent, 0.2),
+      gridLine: hexToRgba(accent, 0.42),
+      gridLineDim: hexToRgba(accent, 0.14),
+      gridHorizon: hexToRgba(light, 0.5),
+      gridGlow: hexToRgba(accent, 0.1),
+      pulseRing: hexToRgba(accent, 0.65),
+      pulseSweep: hexToRgba(accent, 0.5),
+      // 机箱（core）——可见性评审（2026-08-31 可见性评审）：暗态稳态 alpha 提到 ~0.36（原 0.12 低于人眼阈值）
+      mDim: hexToRgba(light, 0.5),
+      mDimPin: hexToRgba(light, 0.68),
+      mLit: hexToRgba(accent, 0.92),
+      mLitGlow: hexToRgba(accent, 0.5),
+      mChipFill: hexToRgba(light, 0.07),
+      // 双芯辉光：alpha 全由 coreGlow() 给（可测、单源），故色槽取全 alpha 避免二次相乘
+      mAccent: hexToRgba(accent, 1),
+      mWhite: hexToRgba(light, 1),
+    };
+  }
+
+  function normalize(v: string | null): Mode {
+    return v && (MODES as readonly string[]).includes(v) ? (v as Mode) : DEFAULT_MODE;
+  }
+
+  // ---- 粒子数据 ----
+  interface Star {
+    x: number;
+    y: number;
+    size: number;
+    spd: number;
+    ph: number;
+    tier: 0 | 1;
+    /** 视差深度：0 = 远景（贴视口）、1 = 近景（随滚动以 22% 页速漂移） */
+    depth: number;
+  }
+  interface Streak {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number;
+  }
+  interface Band {
+    y: number;
+    spd: number;
+    ph: number;
+  }
+  interface Drop {
+    x: number;
+    y: number;
+    spd: number;
+    len: number;
+    kind: 0 | 1;
+  }
+  interface Pulse {
+    kind: 'ring' | 'sweep' | 'spark';
+    x: number;
+    y: number;
+    t0: number;
+  }
+
+  let stars: Star[] = [];
+  let streak: Streak | null = null;
+  let bands: Band[] = [];
+  let rain: Drop[] = [];
+  const pulses: Pulse[] = [];
+
+  // ==================== 机箱内部（core：机器叙事默认底） ====================
+  interface Chip {
+    x: number;
+    y: number;
+  }
+  interface Pkt {
+    tr: number; // 所在走线索引
+    u: number; // 累计进度 0..1
+    spd: number; // 每帧推进（帧速 = 1/(1.2-2s)）
+    dir: 1 | -1; // 出（依芯片向外）/ 回（向芯片汇聚/确认）
+  }
+  let chips: MachineChip[] = [];
+  let traces: MachineTrace[] = [];
+  let traceLit: number[][] = []; // 每 trace 每段磷光余辉 0..1
+  let pkts: Pkt[] = [];
+  let dustP: { x: number; y: number; vx: number; vy: number; ph: number } | null = null;
+  /**
+   * 信号包亮度：同时用于「行进时点亮所在段」（stepCore）与「本体双芯辉光」（drawCore）。
+   * 两处必须同源 —— 否则本体与它点亮的轨迹会亮得不一样。0.92 > GLOW.whiteGate(0.85)
+   * 是常态电流能出白热芯的唯一理由（开机仪式 boost 峰值 0.7 不够格，故不整板白热）。
+   */
+  const PACKET_LIT = 0.92;
+  let pktAt = 60; // 首包较快（开机仪式后即来）
+  let dustAt = 60 * 18; // 尘埃很罕见
+  let bootCascade = -1; // 开机仪式级联（-1 = 未播）；帧计数剩余
+  let cheatT = 0; // Konami「系统全开」/进度帧
+  let retuneT = 0; // 主题再调谐（帧）
+  let flashAt: { x: number; y: number; age: number } | null = null; // click reticle
+  let px = -1;
+  let py = -1; // 指针（近场照明）
+
+  // ---- section 重组（ADR-0004）：基础几何态 + 错峰 snap tween + 2D 相机 ----
+  let sectionNow: SectionId = 'hero';
+  let tweenFromChips: MachineChip[] = [];
+  let tweenFromTraces: MachineTrace[] = [];
+  let tweenToChips: MachineChip[] = [];
+  let tweenToTraces: MachineTrace[] = [];
+  let tweenStart = -1; // 启动帧；-1 = 未重组
+  let tweening = false;
+  const TWEEN_DUR = 32; // 每元素 morph 时长（帧）
+  const TWEEN_STAGGER = 3; // 错峰：每元素延迟（帧）—— overlapping action
+  // 2D 相机（连续推拉 + 鼠标视差）
+  let camScale = 1;
+  let camOX = 0;
+  let camOY = 0;
+  let scrollProg = 0; // 0..1 全页滚动进度
+  let mNX = 0; // 鼠标归一化 x（-1..1，中心 0）
+  let mNY = 0;
+
+  const momentGate = createMomentGate(60_000); // 全局时刻预算闸：≤1 次/60s
+  let lastMomentMs = performance.now(); // 页内时刻基线（布尔串空闲期）
+  const BOOT_DUR = 150; // 开机仪式时长（帧 ≈ 2.5s deliberate：首访 wow，不走 LCP 被吞）
+
+  function seed() {
+    const keep = sectionNow;
+    genMachine();
+    if (keep !== 'hero') setSection(keep); // 尺寸变化后保持在当前 section 基础态
+    const n = starCount(w * h);
+    stars = Array.from({ length: n }, () => ({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      size: Math.random() < 0.35 ? 2 : 3,
+      spd: 0.15 + Math.random() * 0.55,
+      ph: Math.random() * Math.PI * 2,
+      tier: Math.random() < 0.35 ? 0 : 1,
+      depth: Math.random(),
+    }));
+    streak = null;
+
+    bands = Array.from({ length: 3 }, (_, i) => ({
+      y: (h / 3) * i + Math.random() * h,
+      spd: 0.3 + Math.random() * 0.6,
+      ph: Math.random() * Math.PI * 2,
+    }));
+
+    const cols = rainColumns(w);
+    const colW = w / cols;
+    const [lenLo, lenHi] = rainLengthRange();
+    rain = [];
+    for (let c = 0; c < cols; c++) {
+      const drops = 1 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < drops; k++) {
+        rain.push({
+          x: (c + Math.random()) * colW,
+          y: Math.random() * h,
+          spd: 1.5 + Math.random() * 3,
+          len: lenLo + Math.random() * (lenHi - lenLo),
+          kind: Math.random() < 0.5 ? 0 : 1,
+        });
+      }
+    }
+  }
+
+  /** 机箱结构层（core）：确定性板（genSectionTargets 纯函数：固定 4 芯片+7 走线、8px 网格） */
+  function genMachine() {
+    const layout = genSectionTargets('hero', w, h);
+    chips = layout.chips;
+    traces = layout.traces;
+    traceLit = traces.map((tr) => tr.segs.map(() => 0));
+    pkts = [];
+    dustP = null;
+    pktAt = t + (SHOW_MODE ? 40 : 60);
+    dustAt = t + (SHOW_MODE ? 90 : nextInRange(Math.random, 8, 12) * 60);
+    // 重组态初始化（首屏 = hero 基础态，无 tween）
+    tweenFromChips = cloneChips(chips);
+    tweenFromTraces = cloneTraces(traces);
+    tweenToChips = cloneChips(chips);
+    tweenToTraces = cloneTraces(traces);
+    tweenStart = -1;
+    tweening = false;
+    sectionNow = 'hero';
+  }
+
+  function cloneChips(src: MachineChip[]): MachineChip[] {
+    return src.map((c) => ({ ...c, pins: c.pins.map((p) => ({ ...p })) }));
+  }
+  function cloneTraces(src: MachineTrace[]): MachineTrace[] {
+    return src.map((tr) => ({ ...tr, segs: tr.segs.map((s) => ({ ...s })) }));
+  }
+
+  /** section 切换：设定目标板并启动错峰 snap tween（离散重组，连续相机另算） */
+  function setSection(section: SectionId) {
+    if (section === sectionNow && !tweening) return;
+    sectionNow = section;
+    const target = genSectionTargets(section, w, h);
+    tweenFromChips = cloneChips(chips);
+    tweenFromTraces = cloneTraces(traces);
+    tweenToChips = target.chips;
+    tweenToTraces = target.traces;
+    tweenStart = frame;
+    tweening = true;
+  }
+
+  /** 每帧推进重组 tween（错峰 + Silk）：tweening 期间把 chips/traces 插值到目标 */
+  function stepTween() {
+    if (!tweening) return;
+    const elapsed = frame - tweenStart;
+    const nChips = chips.length;
+    const nTr = traces.length;
+    // 元素顺序：芯片在前、走线在后，逐元素错峰
+    for (let i = 0; i < nChips; i++) {
+      const local = clamp01((elapsed - i * TWEEN_STAGGER) / TWEEN_DUR);
+      const e = easeSilk(local);
+      const fc = tweenFromChips[i];
+      const tc = tweenToChips[i];
+      const cc = chips[i];
+      cc.x = mix(fc.x, tc.x, e);
+      cc.y = mix(fc.y, tc.y, e);
+      cc.pins = chipPins(cc, cc.main); // 引脚随芯片位置重算
+    }
+    for (let j = 0; j < nTr; j++) {
+      const i = nChips + j;
+      const local = clamp01((elapsed - i * TWEEN_STAGGER) / TWEEN_DUR);
+      const e = easeSilk(local);
+      const ft = tweenFromTraces[j];
+      const tt = tweenToTraces[j];
+      const ct = traces[j];
+      let total = 0;
+      for (let k = 0; k < ct.segs.length; k++) {
+        const fs = ft.segs[k];
+        const ts = tt.segs[k];
+        const cs = ct.segs[k];
+        cs.x1 = mix(fs.x1, ts.x1, e);
+        cs.y1 = mix(fs.y1, ts.y1, e);
+        cs.x2 = mix(fs.x2, ts.x2, e);
+        cs.y2 = mix(fs.y2, ts.y2, e);
+        cs.len = Math.abs(cs.x2 - cs.x1) + Math.abs(cs.y2 - cs.y1);
+        total += cs.len;
+      }
+      ct.total = total || 1;
+    }
+    if (elapsed > (nChips + nTr - 1) * TWEEN_STAGGER + TWEEN_DUR) {
+      chips = cloneChips(tweenToChips);
+      traces = cloneTraces(tweenToTraces);
+      traceLit = traces.map((tr) => tr.segs.map(() => 0));
+      tweening = false;
+    }
+  }
+
+  function clamp01(n: number): number {
+    return n < 0 ? 0 : n > 1 ? 1 : n;
+  }
+
+  /** 滚动进度 + 鼠标归一化（驱动 2D 相机）；reduced 下相机退化为按 section 离散 */
+  function updateCamera() {
+    const denom = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    scrollProg = (window.scrollY || 0) / denom;
+    if (reduced.matches) {
+      // 离散推拉：进度按当前 section 索引阶梯（去连续平滑），但仍用 cameraFor 算视差×0.5
+      const idx = SECTION_IDS.indexOf(sectionNow);
+      scrollProg = idx / (SECTION_IDS.length - 1);
+    }
+    const cam = cameraFor(scrollProg, mNX, mNY, reduced.matches);
+    camScale = cam.scale;
+    camOX = cam.ox;
+    camOY = cam.oy;
+  }
+
+  /** core 事件层步进（默认静：地表 = 结构层；事件 = 信号包/尘埃/仪式/反馈） */
+  function stepCore() {
+    // 磷光级联衰减（每步 ×0.94 ≈ 0.5s 半衰；cadence=2 时更缓）
+    for (let i = 0; i < traceLit.length; i++)
+      for (let k = 0; k < traceLit[i].length; k++) traceLit[i][k] *= 0.94;
+
+    // 开机仪式：走线级联上电（芯片向外逐段点亮，约 1s）
+    if (bootCascade >= 0) {
+      bootCascade--;
+      const p = Math.min(1, (BOOT_DUR - bootCascade) / BOOT_DUR);
+      for (let i = 0; i < traces.length; i++) {
+        const tr = traces[i];
+        let acc = 0;
+        for (let k = 0; k < tr.segs.length; k++) {
+          acc += tr.segs[k].len;
+          if (acc / tr.total <= p) traceLit[i][k] = Math.max(traceLit[i][k], 0.85);
+        }
+      }
+      if (bootCascade <= 0) bootCascade = -1;
+    }
+
+    // 信号包：6-12s jitter 一只，并发 ≤2（默认静——大多数时间地表只留结构层）
+    if (pkts.length < 2 && t >= pktAt && traces.length > 0) {
+      pkts.push({
+        tr: Math.floor(Math.random() * traces.length),
+        u: 0,
+        spd: 1 / (72 + Math.random() * 48),
+        dir: 1,
+      });
+      pktAt = t + (SHOW_MODE ? 40 : nextInRange(Math.random, 3, 6) * 60); // 3-6s：任意 10s 停留必见至少 1 只
+    }
+    for (let i = pkts.length - 1; i >= 0; i--) {
+      const p = pkts[i];
+      p.u += p.spd * p.dir;
+      const tr = traces[p.tr];
+      const pos = packetPos(tr.segs, tr.total, p.u);
+      if (pos.seg >= 0 && pos.seg < traceLit[p.tr].length)
+        traceLit[p.tr][pos.seg] = Math.max(traceLit[p.tr][pos.seg], PACKET_LIT);
+      if (p.u <= 0 || p.u >= 1) pkts.splice(i, 1);
+    }
+
+    // 尘埃：15-25s 一颗（罕见 = 被注意时才像机器真的在运行）
+    if (!dustP && t >= dustAt) {
+      const sp = dustSpawn(w, h, Math.random);
+      dustP = {
+        ...sp,
+        vx: 0.08 + Math.random() * 0.12,
+        vy: 0.02 + Math.random() * 0.05,
+        ph: Math.random() * Math.PI * 2,
+      };
+      dustAt = t + (SHOW_MODE ? 90 : nextInRange(Math.random, 8, 12) * 60); // 8-12s（原 15-25s 太久）
+    }
+    if (dustP) {
+      dustP.x += dustP.vx;
+      dustP.y += dustP.vy + Math.sin(t * 0.01 + dustP.ph) * 0.06;
+      if (dustP.y > h + 4 || dustP.x > w + 4) dustP = null;
+    }
+
+    if (flashAt) {
+      flashAt.age++;
+      if (flashAt.age > 8) flashAt = null;
+    }
+    if (cheatT > 0) cheatT--;
+    if (retuneT > 0) retuneT--;
+  }
+
+  /** 核心亮度提升（0..1）：开机仪式 / Konami 全开 / 主题再调谐 —— 仪式峰值拉高（走线当时冲 0.7+） */
+  function coreBoost() {
+    let b = 0;
+    if (bootCascade >= 0) b = Math.max(b, ((BOOT_DUR - bootCascade) / BOOT_DUR) * 0.7);
+    if (cheatT > 0) b = Math.max(b, (cheatT / 90) * 0.9);
+    if (retuneT > 0) b = Math.max(b, (retuneT / 24) * 0.5);
+    return b;
+  }
+
+  /** 点到曼哈顿段的最近距离（供点击→最近走线回传） */
+  function nearestTrace(x: number, y: number): number {
+    let best = -1;
+    let bestD = Infinity;
+    for (let i = 0; i < traces.length; i++) {
+      for (const s of traces[i].segs) {
+        let d: number;
+        if (s.x1 === s.x2) {
+          const cy = Math.min(Math.max(y, s.y1), s.y2);
+          d = Math.hypot(s.x1 - x, cy - y);
+        } else {
+          const cx = Math.min(Math.max(x, s.x1), s.x2);
+          d = Math.hypot(cx - x, s.y1 - y);
+        }
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+    }
+    return best;
+  }
+
+  // ---- 帧更新 ----
+  function step() {
+    if (mode === 'core') {
+      stepCore();
+      return;
+    }
+    for (const s of stars) {
+      s.y -= s.spd;
+      s.x += Math.sin(t * 0.02 + s.ph) * 0.18;
+      if (s.y < -3) {
+        s.y = h + 3;
+        s.x = Math.random() * w;
+      }
+    }
+    // 偶发流星（约每 90 帧一条）
+    if (!streak && Math.random() < 0.011) {
+      const ang = Math.PI + (Math.random() - 0.5) * 0.7; // 向左上/右上斜飞
+      const spd = 3.2 + Math.random() * 2.4;
+      streak = {
+        x: Math.random() * w,
+        y: Math.random() * h * 0.5,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        life: 26,
+      };
+    }
+    if (streak) {
+      streak.x += streak.vx;
+      streak.y += streak.vy;
+      streak.life -= 1;
+      if (streak.life <= 0) streak = null;
+    }
+    for (const b of bands) {
+      b.y += b.spd;
+      if (b.y > h + 8) b.y = -8;
+    }
+    for (const d of rain) {
+      d.y += d.spd;
+      if (d.y - d.len > h) {
+        d.y = -d.len - 2;
+        d.x = Math.random() * w;
+      }
+    }
+    for (let i = pulses.length - 1; i >= 0; i--) {
+      const p = pulses[i];
+      const age = t - p.t0;
+      const dead =
+        (p.kind === 'ring' && age > 60) ||
+        (p.kind === 'sweep' && age > 50) ||
+        (p.kind === 'spark' && age > 18);
+      if (dead) pulses.splice(i, 1);
+    }
+  }
+
+  // ---- 绘制 ----
+  function drawStars() {
+    // 滚动视差：近层星尘随 scrollY 以 22% 页速漂移（纯函数层 starViewY 提供卷绕）
+    const scrollY = window.scrollY || 0;
+    // 光晕层（halo）→ 核心层，深色主题走 additive
+    setAdditive(ctx, additive);
+    ctx.fillStyle = styles.starHalo;
+    for (const s of stars) {
+      if (s.tier === 0) continue;
+      const sy = starViewY(s.y, h, scrollY, s.depth);
+      ctx.fillRect(Math.round(s.x) - 1, Math.round(sy) - 1, s.size + 2, s.size + 2);
+    }
+    setAdditive(ctx, false);
+    ctx.fillStyle = styles.starBack;
+    for (const s of stars) {
+      if (s.tier !== 0) continue;
+      const sy = starViewY(s.y, h, scrollY, s.depth);
+      ctx.fillRect(Math.round(s.x), Math.round(sy), 1, 1);
+    }
+    ctx.fillStyle = styles.starCore;
+    for (const s of stars) {
+      if (s.tier !== 1) continue;
+      const sy = starViewY(s.y, h, scrollY, s.depth);
+      ctx.fillRect(Math.round(s.x), Math.round(sy), s.size, s.size);
+    }
+    // 流星：亮头 + 渐隐尾
+    if (streak) {
+      setAdditive(ctx, additive);
+      ctx.fillStyle = styles.streakTail;
+      ctx.fillRect(Math.round(streak.x), Math.round(streak.y), 3, 1);
+      ctx.fillRect(Math.round(streak.x - streak.vx * 2), Math.round(streak.y - streak.vy * 2), 2, 1);
+      setAdditive(ctx, false);
+      ctx.fillStyle = styles.streak;
+      ctx.fillRect(Math.round(streak.x), Math.round(streak.y), 1, 1);
+    }
+  }
+
+  function drawScan() {
+    setAdditive(ctx, additive);
+    const TAIL = 4; // 淡尾步数（细带弱尾，阅读页友好）
+    for (const b of bands) {
+      const th = scanThickness(t * 0.02 + b.ph);
+      const y = Math.round(b.y);
+      // 光晕层
+      ctx.fillStyle = styles.scanHalo;
+      ctx.fillRect(0, y - 1, w, th + 3);
+      // 淡尾：上/下各 TAIL 步，alpha 逐步衰减（bgfx-motion.scanTailAlpha）
+      ctx.fillStyle = styles.scanBand;
+      for (let i = 0; i < TAIL; i++) {
+        ctx.globalAlpha = scanTailAlpha(i, TAIL);
+        ctx.fillRect(0, y - th - 1 - i, w, 1);
+        ctx.fillRect(0, y + th + 1 + i, w, 1);
+      }
+      ctx.globalAlpha = 1;
+      // 亮芯细带
+      ctx.fillStyle = styles.scanBand;
+      ctx.fillRect(0, y, w, th + 1);
+      ctx.fillStyle = styles.scanLead;
+      ctx.fillRect(0, y - 1, w, 1);
+    }
+    setAdditive(ctx, false);
+  }
+
+  function drawRain() {
+    setAdditive(ctx, additive);
+    for (const d of rain) {
+      ctx.fillStyle = d.kind === 0 ? styles.rainBody : styles.rainBodyB;
+      ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, Math.round(d.len));
+      ctx.fillStyle = styles.rainHead;
+      ctx.fillRect(Math.round(d.x), Math.round(d.y - 2), 1, 2);
+    }
+  }
+
+  function drawWave() {
+    const cy = Math.round(h * 0.42);
+    const { a1, a2 } = waveAmplitude(h);
+    // 光晕层（整条粗描边）
+    setAdditive(ctx, additive);
+    ctx.fillStyle = styles.waveHalo;
+    for (let x = 0; x < w; x += 2) {
+      const y =
+        cy + Math.sin(x * 0.02 + t * 0.045) * a1 + Math.sin(x * 0.007 - t * 0.02) * a2;
+      ctx.fillRect(x, Math.round(y) - 1, 2, 3);
+    }
+    setAdditive(ctx, false);
+    // 镜像倒影（淡）
+    ctx.fillStyle = styles.waveMirror;
+    for (let x = 0; x < w; x += 3) {
+      const y =
+        cy + Math.sin(x * 0.02 + t * 0.045) * a1 + Math.sin(x * 0.007 - t * 0.02) * a2;
+      ctx.fillRect(x, Math.round(cy + (cy - y)), 3, 1);
+    }
+    // 核心波形
+    ctx.fillStyle = styles.waveCore;
+    for (let x = 0; x < w; x += 1) {
+      const y =
+        cy + Math.sin(x * 0.02 + t * 0.045) * a1 + Math.sin(x * 0.007 - t * 0.02) * a2;
+      ctx.fillRect(x, Math.round(y), 1, 1);
+    }
+    // 基线
+    ctx.fillStyle = styles.waveMirror;
+    ctx.fillRect(0, cy, w, 1);
+  }
+
+  function drawGrid() {
+    const cy = Math.round(h * 0.62);
+    const vx = w / 2;
+    setAdditive(ctx, additive);
+    // 地平线辉光带（3 层递减）
+    ctx.fillStyle = styles.gridGlow;
+    ctx.fillRect(0, cy - 14, w, 28);
+    ctx.fillStyle = styles.gridLineDim;
+    ctx.fillRect(0, cy - 6, w, 12);
+    setAdditive(ctx, false);
+    ctx.fillStyle = styles.gridHorizon;
+    ctx.fillRect(0, cy, w, 1);
+    // 透视竖线（汇聚到消失点）
+    for (let i = -6; i <= 6; i++) {
+      const f = i / 6;
+      const xTop = vx + f * w * 0.3;
+      const xBot = vx + f * w * 0.52;
+      ctx.fillStyle = Math.abs(f) < 0.4 ? styles.gridLine : styles.gridLineDim;
+      for (let y = cy; y < h; y += 3) {
+        const x = xTop + ((xBot - xTop) * (y - cy)) / (h - cy);
+        ctx.fillRect(Math.round(x), y, 1, 2);
+      }
+    }
+    // 透视横线：间距随 z 增大，向观众推进
+    const s = 22;
+    const off = ((t * 1.2) % s);
+    for (let k = 1; k < 16; k++) {
+      const z = k * s + off;
+      const y = cy + (z * z) / (h * 1.35);
+      if (y >= h) break;
+      ctx.fillStyle = k % 2 === 0 ? styles.gridLine : styles.gridLineDim;
+      ctx.fillRect(0, Math.round(y), w, 2);
+    }
+  }
+
+  function drawPulses() {
+    if (pulses.length === 0) return;
+    setAdditive(ctx, additive);
+    for (const p of pulses) {
+      const age = t - p.t0;
+      if (p.kind === 'ring') {
+        const r = 6 + age * 2.6;
+        const a = Math.max(0, 0.5 - age * 0.008);
+        if (a <= 0) continue;
+        ctx.strokeStyle = styles.pulseRing;
+        ctx.globalAlpha = a;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else if (p.kind === 'sweep') {
+        const y = -16 + age * (h + 32) / 50;
+        ctx.fillStyle = styles.pulseSweep;
+        ctx.globalAlpha = Math.max(0, 0.55 - age * 0.011);
+        ctx.fillRect(0, Math.round(y), w, 2);
+        ctx.globalAlpha = 1;
+      } else if (p.kind === 'spark') {
+        ctx.fillStyle = styles.pulseSweep;
+        ctx.globalAlpha = Math.max(0, 0.8 - age * 0.045);
+        ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+        ctx.fillRect(Math.round(p.x) + 2, Math.round(p.y) + 1, 1, 1);
+        ctx.globalAlpha = 1;
+      }
+    }
+    setAdditive(ctx, false);
+  }
+
+  function drawCore() {
+    const boost = coreBoost();
+    // non-hero（index 首屏以下 / blog 等）：scrim 压 72%，结构线加一层描边保持可辨
+    const vividMode = wrap.dataset.vivid === '1';
+    // section 重组 tween + 2D 相机（每帧推进，连续相机/离散 snap）
+    stepTween();
+    updateCamera();
+    // 抗 scrim 压暗补偿强度：content 页整页覆盖恒 1；index 随滚动 0→1（scrim 顶边在 100vh）
+    const scrimCover = scrimCoverage(window.scrollY || 0, window.innerHeight, vividMode);
+    // 调试钩子（验收/排查用）：每帧汇报机器内部状态
+    ;(window as unknown as { __bgfxDebug?: Record<string, unknown> }).__bgfxDebug = {
+      mode,
+      section: sectionNow,
+      traces: traces.length,
+      segs: traces.reduce((n, tr) => n + tr.segs.length, 0),
+      chips: chips.length,
+      pkts: pkts.length,
+      litSum: traces.reduce((n, tr, i) => n + traceLit[i].reduce((a, b) => a + b, 0), 0),
+      boost: Math.round(boost * 100) / 100,
+      cam: Math.round(camScale * 100) / 100,
+      boot: bootCascade,
+    };
+    // 指针反变换到板坐标（相机缩放/平移后），供近场照明对齐
+    const bpx = px >= 0 ? (px - w / 2) / camScale + w / 2 - camOX : -1;
+    const bpy = py >= 0 ? (py - h / 2) / camScale + h / 2 - camOY : -1;
+    // 悬停近场照明：指针 80px 内段临时 +0.22（只作用于绘制，不落状态，零新粒子）
+    const near = (s: TraceSeg) =>
+      bpx >= 0 &&
+      (s.x1 === s.x2
+        ? Math.abs(s.x1 - bpx) <= 80 && bpy >= Math.min(s.y1, s.y2) - 80 && bpy <= Math.max(s.y1, s.y2) + 80
+        : Math.abs(s.y1 - bpy) <= 80 && bpx >= Math.min(s.x1, s.x2) - 80 && bpx <= Math.max(s.x1, s.x2) + 80);
+    // 2D 相机变换：缩放 + 鼠标视差（围绕视口中心），结构层绘制前施加、结束后还原
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(camScale, camScale);
+    ctx.translate(-w / 2 + camOX, -h / 2 + camOY);
+    // 1) 结构层：走线（type 线宽 2px 电源轨 / 1px 信号线；稳态 dim → 磷光/事件 accent）
+    for (let i = 0; i < traces.length; i++) {
+      const t = traces[i];
+      const segs = t.segs;
+      for (let k = 0; k < segs.length; k++) {
+        const s = segs[k];
+        const lit = Math.min(1, traceLit[i][k] + boost + (near(s) ? 0.22 : 0));
+        if (lit <= 0.03) {
+          fillSeg(s, styles.mDim, t.px === 2 ? 0.5 : 0.32, t.px); // 电源轨略亮
+          if (!vividMode) fillSeg(s, styles.mDim, 0.15, t.px); // 补偿 scrim 压暗
+          continue;
+        }
+        // 双芯辉光：分层由 coreGlow() 给（白芯门控 + 几何约束 + 抗 scrim 补偿全在 lib 层）
+        const layers = coreGlow(lit, { kind: 'trace', scrim: scrimCover });
+        if (layers.length > 0) {
+          setAdditive(ctx, additive);
+          for (const L of layers)
+            fillSeg(
+              s,
+              L.slot === 'core' ? styles.mWhite : styles.mAccent,
+              L.alpha,
+              t.px + L.grow,
+              -L.grow / 2
+            );
+          setAdditive(ctx, false);
+        } else {
+          fillSeg(s, styles.mDimPin, 0.35 + lit * 0.4, t.px); // 预热态（未达辉光地板）
+        }
+      }
+    }
+    // 2) 芯片：两类封装（主芯 40×40 带引脚+pin1；辅芯 16×12）+ 极淡内填充+描边
+    for (const chip of chips) {
+      // 内填充（托出芯片）
+      ctx.fillStyle = styles.mChipFill;
+      ctx.fillRect(chip.x + 1, chip.y + 1, chip.w - 2, chip.h - 2);
+      // 描边
+      ctx.fillStyle = styles.mDimPin;
+      ctx.globalAlpha = 0.5;
+      ctx.fillRect(chip.x, chip.y, chip.w, 1);
+      ctx.fillRect(chip.x, chip.y + chip.h - 1, chip.w, 1);
+      ctx.fillRect(chip.x, chip.y, 1, chip.h);
+      ctx.fillRect(chip.x + chip.w - 1, chip.y, 1, chip.h);
+      ctx.globalAlpha = 1;
+      // 引脚（2×4，与走线同网格锚点）
+      for (const pin of chip.pins) {
+        const horizontal = pin.y === chip.y || pin.y === chip.y + chip.h;
+        ctx.fillStyle = styles.mDim;
+        ctx.globalAlpha = 0.7;
+        if (horizontal) ctx.fillRect(pin.x - 1, pin.y - 1, 2, 2);
+        else ctx.fillRect(pin.x - 1, pin.y - 1, 2, 2);
+        ctx.globalAlpha = 1;
+      }
+      if (chip.main) {
+        ctx.fillStyle = styles.mLit;
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(chip.x - 2, chip.y - 2, 2, 2); // pin1 缺口（左上）
+        ctx.globalAlpha = 1;
+      }
+    }
+    // 3) 信号包：additive 双芯辉光（--gb-3 白热芯 + --gb-2 两级踏阶晕）+ 抗 scrim 补偿
+    setAdditive(ctx, additive);
+    for (const p of pkts) {
+      const pos = packetPos(traces[p.tr].segs, traces[p.tr].total, p.u);
+      for (const L of coreGlow(PACKET_LIT, { kind: 'packet', scrim: scrimCover })) {
+        const off = L.grow / 2; // grow 0→1px 芯 / 2→3×3 中晕 / 4→5×5 外晕
+        ctx.globalAlpha = L.alpha;
+        ctx.fillStyle = L.slot === 'core' ? styles.mWhite : styles.mAccent;
+        ctx.fillRect(pos.x - off, pos.y - off, 1 + L.grow, 1 + L.grow);
+      }
+    }
+    ctx.globalAlpha = 1;
+    setAdditive(ctx, false);
+    // 4) 尘埃：罕见 1px + 呼吸闪烁（光柱感；基准提到 0.5）
+    if (dustP) {
+      const flick = 0.5 + 0.4 * Math.max(0, Math.sin(t * 0.05 + dustP.ph));
+      ctx.fillStyle = styles.mDimPin;
+      ctx.globalAlpha = flick;
+      ctx.fillRect(Math.round(dustP.x), Math.round(dustP.y), 1, 1);
+      ctx.globalAlpha = 1;
+    }
+    // 5) 点击 reticle：方括号渐隐（「键被机器收下」）
+    if (flashAt) {
+      const a = Math.max(0, 1 - flashAt.age / 8);
+      setAdditive(ctx, additive);
+      ctx.strokeStyle = styles.mLit;
+      ctx.globalAlpha = a;
+      ctx.strokeRect(flashAt.x - 4, flashAt.y - 4, 8, 8);
+      ctx.globalAlpha = 1;
+      setAdditive(ctx, false);
+    }
+    // 6) 待机灯：右下角独立区（x=w-32, y=h-32，净空座谈；评审摆位——不在控件簇/导航旁）
+    const ledX = w - 28;
+    const ledY = h - 28;
+    const stable = ledPhase(t);
+    const blink = bootCascade >= 0 && Math.floor((BOOT_DUR - bootCascade) / 30) % 2 === 0 ? 1 : 0;
+    const b = Math.max(stable, blink);
+    setAdditive(ctx, additive);
+    ctx.fillStyle = styles.mLitGlow;
+    ctx.globalAlpha = 0.6;
+    ctx.fillRect(ledX - 6, ledY - 6, 16, 16);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = styles.mLit;
+    ctx.globalAlpha = 0.4 + 0.6 * b;
+    ctx.fillRect(ledX, ledY, 4, 4);
+    ctx.globalAlpha = 1;
+    setAdditive(ctx, false);
+    ctx.restore(); // 结束 2D 相机变换
+  }
+
+  /**
+   * 轴对齐线段绘制（带线宽：电源轨 2px / 信号线 1px）。
+   * off = 跨轴偏移（辉光层传 -grow/2，使晕以芯为中心对称外扩；否则晕会单侧偏、像投影而非辉光）。
+   */
+  function fillSeg(s: TraceSeg, color: string, alpha: number, width = 1, off = 0) {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    if (s.x1 === s.x2) ctx.fillRect(s.x1 + off, Math.min(s.y1, s.y2), width, s.len);
+    else ctx.fillRect(Math.min(s.x1, s.x2), s.y1 + off, s.len, width);
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    if (mode === 'core') drawCore();
+    else if (mode === 'stars') drawStars();
+    else if (mode === 'scan') drawScan();
+    else if (mode === 'rain') drawRain();
+    else if (mode === 'wave') drawWave();
+    else if (mode === 'grid') drawGrid();
+    drawPulses();
+  }
+
+  reduced.addEventListener('change', () => {
+    cadence = reduced.matches ? 2 : 1;
+  });
+
+  // ---- 音画联动：'8bit:fx' 事件 → core 机器响应 / 六模式脉冲 ----
+  window.addEventListener('8bit:fx', (e) => {
+    if (mode === 'off') return;
+    const kind = (e as CustomEvent<string>).detail;
+    if (mode === 'core') {
+      // 机器响应（克制：用完即回地板）
+      if (kind === 'click') {
+        flashAt = {
+          x: Math.round(w * (0.2 + Math.random() * 0.6)),
+          y: Math.round(h * (0.3 + Math.random() * 0.4)),
+          age: 0,
+        };
+        const tr = nearestTrace(flashAt.x, flashAt.y);
+        if (tr >= 0 && pkts.length < 3)
+          pkts.push({ tr, u: 1, spd: 1 / 60, dir: -1 }); // 「键被机器收下」回传
+        return;
+      }
+      if (kind === 'nav') {
+        for (let k = 0; k < 2 && pkts.length < 3; k++) {
+          pkts.push({ tr: Math.floor(Math.random() * traces.length), u: 1, spd: 1 / 72, dir: -1 });
+        }
+        return;
+      }
+      // hover：近场照明由 pointermove 驱动，零新粒子
+      return;
+    }
+    if (pulses.length >= 5) pulses.shift();
+    const rpx = w * (0.2 + Math.random() * 0.6);
+    const rpy = h * (0.35 + Math.random() * 0.4);
+    if (kind === 'click') pulses.push({ kind: 'ring', x: rpx, y: rpy, t0: t });
+    else if (kind === 'nav') pulses.push({ kind: 'sweep', x: 0, y: 0, t0: t });
+    else if (kind === 'hover') pulses.push({ kind: 'spark', x: rpx, y: rpy, t0: t });
+  });
+
+  // 指针追踪（core 近场照明 + 2D 相机鼠标视差）
+  window.addEventListener('pointermove', (e) => {
+    px = e.clientX;
+    py = e.clientY;
+    mNX = (e.clientX / window.innerWidth) * 2 - 1;
+    mNY = (e.clientY / window.innerHeight) * 2 - 1;
+  });
+
+  // ---- section 重组：跟踪首页当前可见 section（其余路由无 section → 保持 hero 基础态） ----
+  (function trackSections() {
+    const els = Array.from(document.querySelectorAll<HTMLElement>('section[id]'));
+    const tracked = els.filter((el) => SECTION_IDS.includes(el.id as SectionId));
+    if (tracked.length === 0) return; // 非首页：基础态不变
+    const ratios = new Map<string, number>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) ratios.set(en.target.id, en.intersectionRatio);
+        let best = '';
+        let bestR = 0;
+        for (const [id, r] of ratios) if (r > bestR) {
+          bestR = r;
+          best = id;
+        }
+        if (best && SECTION_IDS.includes(best as SectionId)) setSection(best as SectionId);
+      },
+      { threshold: [0.25, 0.5, 0.75] }
+    );
+    tracked.forEach((el) => io.observe(el));
+  })();
+
+  // Konami 联动：'系统全开'——全部走线短暂满亮（1.5s 磷光级联衰减）
+  window.addEventListener('8bit:cheat', () => {
+    if (mode !== 'core') return;
+    cheatT = 90; // 1.5s（60fps）；不抢前景爆裂——背景做「系统全开」
+  });
+
+  // ---- 开关 / 循环 ----
+  // 按钮 + 点击在 SideDock；这里只管 canvas/scrim。模式由 dock 写 bgfxPref，
+  // frame() 头部轮询 → 模式变就重画 + sync。
+  function apply() {
+    canvas.hidden = mode === 'off';
+    // 背景退场时 scrim 同步隐藏：canvas 不画时玻璃层只剩压暗，会染暗整页
+    if (scrim) scrim.hidden = mode === 'off';
+  }
+
+  // ---- 开机仪式（会话一次：core 默认时的首屏上电） ----
+  let playBoot = false;
+  try {
+    playBoot = bootOnce(
+      '8bitme:boot',
+      (k) => sessionStorage.getItem(k),
+      (k, v) => sessionStorage.setItem(k, v),
+      '1'
+    );
+  } catch {
+    playBoot = false; // storage 不可用 → 不播，避免每次刷新都演
+  }
+  bootCascade = (mode === 'core' && playBoot) ? BOOT_DUR : -1;
+
+  apply();
+  rt.resize();
+  rt.sync();
+</script>
+
+<style>
+  .bgfx-canvas {
+    /* 固定视口装饰层：负 z-index 压在 body 背景之上、页面内容之下（内容透明背景透出动画） */
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* 可读性 scrim：内容流内绝对层，覆盖 [top, 页尾]（body 已定位 relative）
+     color-mix gb-0 + 透明 → 按主题半透明玻璃，动画辉光被压暗、文字保持对比度 */
+  .bgfx-scrim {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--gb-0) 72%, transparent);
+  }
+
+  .bgfx-scrim.hero-vivid {
+    /* 首屏免遮：hero 全亮；滚出视口后 scrim 从底部自然进入，正文区全程受保护 */
+    top: 100vh;
+  }
+
+  .bgfx-canvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+</style>

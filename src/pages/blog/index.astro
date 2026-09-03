@@ -1,0 +1,100 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import CoverBlock from '../../components/CoverBlock.astro';
+import { getPublishedPosts, formatDate } from '../../lib/posts';
+import { siteConfig, url } from '../../lib/config';
+
+const posts = await getPublishedPosts();
+const title = `博客 | ${siteConfig.title}`;
+const description = '文章列表：工程笔记（engineering notes）与项目解说（project walkthrough），按日期倒序。';
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="container">
+    <h2 class="section-title">
+      <span class="num text-pixel">B</span><span class="text-pixel">BLOG</span> 文章列表
+    </h2>
+
+    {
+      posts.length === 0 ? (
+        <p class="text-dim">暂无文章，敬请期待。</p>
+      ) : (
+        <ul class="posts">
+          {posts.map((post) => (
+            <li class="pixel-panel card">
+              <CoverBlock cover={post.data.cover} href={url(`blog/${post.id}`)} showTag />
+              <div class="body">
+                <h3>
+                  <a href={url(`blog/${post.id}`)} data-sfx-role="nav">{post.data.title}</a>
+                </h3>
+                <p class="meta">
+                  <time datetime={post.data.date.toISOString()}>
+                    {formatDate(post.data.date)}
+                  </time>
+                </p>
+                <p class="desc">{post.data.description}</p>
+                <p class="tags">
+                  {post.data.tags.map((tag) => (
+                    <span class="tag text-pixel">{tag}</span>
+                  ))}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </div>
+</BaseLayout>
+
+<style>
+  .posts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .card {
+    display: grid;
+    grid-template-columns: 6rem 1fr;
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .body h3 {
+    margin-bottom: 0.35rem;
+  }
+
+  .body h3 a:hover {
+    color: var(--gb-2);
+  }
+
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--gb-2);
+    margin-bottom: 0.5rem;
+  }
+
+  .desc {
+    color: var(--color-text-dim);
+    font-size: 0.9rem;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.75rem 0 0;
+  }
+
+  @media (max-width: 560px) {
+    .card {
+      grid-template-columns: 4rem 1fr;
+      gap: 0.9rem;
+    }
+  }
+</style>

@@ -1,0 +1,199 @@
+---
+import { siteConfig, url } from '../lib/config';
+import CatSprite from './CatSprite.astro';
+
+/**
+ * Nav 由 BaseLayout 全站挂载，而 siteConfig.nav 是首页 section 的纯锚点
+ * （#hero / #about / …）。博客页与 404 页的 DOM 里没有这些 id，
+ * 直接渲染纯锚点会让点击静默失效（2026-08-29 作者发现的 bug）。
+ * 因此：首页保留纯锚点（平滑滚动 + scrollspy 生效），
+ * 非首页一律降级为「首页 + 锚点」的绝对路径。
+ */
+const home = url('/');
+const isHome = Astro.url.pathname === home;
+const sectionHref = (hash: string) => (isHome ? hash : `${home}${hash}`);
+
+/**
+ * 路由级激活态：博客列表页与文章页没有首页那些 section，scrollspy 整段跳过，
+ * 若只靠它，这两类页面上一个高亮都没有，访客看不出自己在哪。
+ * 因此「博客」项由 pathname 在服务端定，与 scrollspy 的 section 级激活互补。
+ */
+const blog = url('blog');
+const isBlog =
+  Astro.url.pathname === blog || Astro.url.pathname.startsWith(`${blog}/`);
+---
+
+<header class="nav">
+  <div class="nav-inner container">
+    <a class="logo text-pixel" href="#main" data-sfx-role="nav" data-sfx-hover>8bit<span class="dot">.</span>me</a>
+    <nav aria-label="主导航">
+      <ul>
+        {siteConfig.nav.map((item) => (
+          <li>
+            <a href={sectionHref(item.href)} data-sfx-role="nav" data-sfx-hover>{item.label}</a>
+          </li>
+        ))}
+        <li>
+          <a
+            href={blog}
+            class:list={[{ 'is-active': isBlog }]}
+            aria-current={isBlog ? 'page' : undefined}
+            data-sfx-role="nav" data-sfx-hover>博客</a
+          >
+        </li>
+      </ul>
+    </nav>
+    <!-- 丝印层吉祥物：坐在板边打瞌睡的睡猫（GIF 呼吸动画，2026-08-31 由 pose1 睡姿素材抠透明）。
+         刻意不用 <a> 包裹：nav-links.spec.ts 有「全站 a[href^="#"] 目标必须存在」的硬契约，
+         装饰元素包成锚点会在 /blog、/404 上炸掉。纯装饰 → alt='' 且不进 tab 序。 -->
+    <span class="nav-cat" aria-hidden="true">
+      <img class="nav-cat__img" src="/cats/nav_sleep.gif" alt="" />
+    </span>
+  </div>
+</header>
+
+<script>
+  // scrollspy：当前 section 高亮对应导航项（非首页无这些 section，直接跳过）
+  // 选择器用 [href*="#"] 而非 [href^="#"]：非首页的导航项 href 是 "/#about" 这类
+  // 带路由前缀的形式，`l.hash` 仍返回 "#about"，因此比较逻辑不变
+  const sections = document.querySelectorAll('main section[id]');
+  if (sections.length > 0) {
+    const links = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('.nav a[href*="#"]')
+    );
+    const byId = new Map<string, Element>(
+      Array.from(sections).map((s) => [`#${s.id}`, s])
+    );
+    const io = new IntersectionObserver(
+      (entries) => {
+        let cur: string | null = null;
+        for (const e of entries) if (e.isIntersecting) cur = `#${(e.target as HTMLElement).id}`;
+        if (cur) {
+          links.forEach((l) => l.classList.toggle('is-active', l.hash === cur));
+        }
+      },
+      { rootMargin: '-40% 0px -55% 0px' }
+    );
+    sections.forEach((s) => io.observe(s));
+    void byId;
+  }
+</script>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background-color: var(--gb-0);
+    border-bottom: 4px solid var(--gb-2);
+  }
+
+  .nav-inner {
+    position: relative; /* 竖排时猫 absolute 定位的参照 */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: var(--nav-height);
+  }
+
+  .logo {
+    color: var(--gb-3);
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .logo .dot {
+    color: var(--gb-2);
+  }
+
+  .logo:hover {
+    color: var(--gb-2);
+  }
+
+  ul {
+    display: flex;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  ul::-webkit-scrollbar {
+    display: none;
+  }
+
+  a {
+    position: relative;
+    display: inline-block;
+    padding: 0.4rem 0.5rem;
+    color: var(--gb-3);
+    font-size: 0.9rem;
+    white-space: nowrap;
+    /* 总线（Bus）下划线：8px 档位虚线，hover 通电 */
+    border-bottom: 2px dashed color-mix(in srgb, var(--gb-2) 32%, transparent);
+    transition: border-color 0.1s steps(2);
+  }
+
+  a::after {
+    content: '';
+    position: absolute;
+    right: 0.5rem;
+    bottom: 0;
+    left: 0.5rem;
+    height: 3px;
+    background-color: var(--gb-2);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.12s steps(6);
+  }
+
+  a:hover {
+    color: var(--gb-2);
+    text-shadow: 2px 2px 0 var(--gb-1);
+    border-bottom-color: var(--gb-2);
+  }
+
+  /* scrollspy 当前 section */
+  a.is-active {
+    color: var(--gb-2);
+    border-bottom-color: transparent;
+  }
+
+  a.is-active::after {
+    transform: scaleX(1);
+  }
+
+  .nav-cat {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .nav-cat__img {
+    width: 60px;
+    height: auto;
+    image-rendering: pixelated;
+  }
+
+  @media (max-width: 560px) {
+    .nav-inner {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.25rem;
+      padding-block: 0.5rem;
+    }
+    ul {
+      justify-content: space-between;
+    }
+    /* 竖排时猫回到板右沿、贴着导航下方，不占整行 */
+    .nav-cat {
+      position: absolute;
+      top: 0.5rem;
+      right: 0;
+    }
+  }
+</style>

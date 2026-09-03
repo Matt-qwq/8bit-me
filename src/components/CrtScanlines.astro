@@ -1,0 +1,45 @@
+---
+/**
+ * CRT 全屏扫描线层 —— 从原 CrtOverlay.astro 拆出，只留全屏 z=50 装饰层。
+ * 按钮已迁出到 SideDock（z=70，固定右侧居中，可折叠）。
+ * pointer-events:none，不阻塞交互；reduced-motion 下停掉闪烁保留静态扫描线。
+ */
+---
+<div id="crt-overlay" class="crt-overlay" aria-hidden="true"></div>
+
+<style>
+  .crt-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    background:
+      /* 扫描线 */
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0 2px,
+        var(--crt-scan) 2px 4px
+      ),
+      /* 微弱压暗 */
+      radial-gradient(
+        ellipse at center,
+        transparent 55%,
+        var(--crt-vignette) 100%
+      );
+    animation: crt-flicker 4s steps(12, end) infinite;
+  }
+
+  @keyframes crt-flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.92; }
+    54% { opacity: 0.99; }
+    96% { opacity: 1; }
+  }
+
+  /* 尊重 prefers-reduced-motion：去掉闪烁，保留静态扫描线（§43 护栏） */
+  @media (prefers-reduced-motion: reduce) {
+    .crt-overlay {
+      animation: none;
+    }
+  }
+</style>

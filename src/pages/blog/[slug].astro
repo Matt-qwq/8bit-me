@@ -1,0 +1,166 @@
+---
+import { render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import CoverBlock from '../../components/CoverBlock.astro';
+import { getPublishedPosts, formatDate, type Post } from '../../lib/posts';
+import { siteConfig, url } from '../../lib/config';
+
+export async function getStaticPaths() {
+  const posts = await getPublishedPosts();
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}
+
+interface Props {
+  post: Post;
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+
+const title = `${post.data.title} | ${siteConfig.title}`;
+---
+
+<BaseLayout title={title} description={post.data.description}>
+  <article class="container post">
+    <p>
+      <a class="back text-pixel" href={url('blog')} data-sfx-role="nav">← BACK</a>
+    </p>
+
+    <header class="head">
+      {post.data.cover && <CoverBlock cover={post.data.cover} size="lg" />}
+      <div class="head-main">
+        <h1>{post.data.title}</h1>
+        <p class="meta">
+          <time datetime={post.data.date.toISOString()}>
+            {formatDate(post.data.date)}
+          </time>
+          <span class="sep">·</span>
+          <span>
+            {post.data.tags.map((tag) => (
+              <span class="tag text-pixel">{tag}</span>
+            ))}
+          </span>
+        </p>
+      </div>
+    </header>
+
+    <div class="prose pixel-panel">
+      <span class="pp-pad tl" aria-hidden="true"></span>
+      <span class="pp-pad tr" aria-hidden="true"></span>
+      <span class="pp-pad bl" aria-hidden="true"></span>
+      <span class="pp-pad br" aria-hidden="true"></span>
+      <Content />
+    </div>
+  </article>
+</BaseLayout>
+
+<style>
+  .post {
+    padding-top: 2rem;
+  }
+
+  .back {
+    font-size: 0.6rem;
+    color: var(--gb-2);
+  }
+
+  .back:hover {
+    color: var(--gb-3);
+  }
+
+  .head {
+    display: flex;
+    /* h1 顶格成为头部支配元素；封面降为侧标（装饰块不压语义锚点） */
+    align-items: flex-start;
+    /* 间距镜像列表卡 .card gap 1.25rem —— 「点过的拇指图在目的地同位置再现」承接语义。
+       注意：这里不用 margin-bottom 管封面间距（Astro scoped 规则打不进 CoverBlock 子组件，
+       曾是死代码导致 0px 贴边，2026-09 作者反馈），flex gap 在父级生效。 */
+    gap: 1.25rem;
+    margin: 1.5rem 0 2.5rem;
+  }
+
+  .head-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .head h1 {
+    font-size: 1.15rem;
+  }
+
+  @media (max-width: 560px) {
+    /* 窄屏降级镜像列表卡的 media query（gap 0.9rem）；封面宽度缩 4rem 见 global.css */
+    .head {
+      gap: 0.9rem;
+    }
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--gb-2);
+  }
+
+  .meta .sep {
+    color: var(--gb-1);
+  }
+
+  /* 文章正文排版 */
+  .prose :global(h2) {
+    font-size: 0.95rem;
+    margin-block: 2rem 0.75rem;
+  }
+
+  .prose :global(h3) {
+    font-size: 0.8rem;
+  }
+
+  .prose :global(p) {
+    color: var(--color-text);
+  }
+
+  .prose :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background-color: color-mix(in srgb, var(--gb-1) 40%, var(--gb-0));
+    padding: 0.1em 0.35em;
+  }
+
+  .prose :global(pre) {
+    border: 3px solid var(--gb-1);
+    background-color: color-mix(in srgb, var(--gb-1) 35%, var(--gb-0));
+    padding: 1rem;
+    overflow-x: auto;
+  }
+
+  .prose :global(pre code) {
+    background: none;
+    padding: 0;
+  }
+
+  .prose :global(blockquote) {
+    margin: 1rem 0;
+    padding-left: 1rem;
+    border-left: 4px solid var(--gb-2);
+    color: var(--color-text-dim);
+  }
+
+  .prose :global(ul),
+  .prose :global(ol) {
+    padding-inline-start: 1.5rem;
+  }
+
+  .prose :global(hr) {
+    border: none;
+    border-top: 4px solid var(--gb-1);
+    margin: 2rem auto;
+    width: 6rem;
+  }
+</style>

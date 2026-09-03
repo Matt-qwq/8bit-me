@@ -1,0 +1,144 @@
+---
+/**
+ * Konami 彩蛋（easter egg，v2 gamified interaction）：
+ * 输入 ↑↑↓↓←→←→BA 触发一次全屏像素爆裂 + 提示 toast。
+ * 零依赖：临时 canvas 一次性爆裂动画，2.5s 自毁；重复触发可再来一次。
+ * 装饰性彩蛋，与主题无关，静默失败无害。
+ */
+---
+
+<script>
+  // 有 import 的脚本会被 Astro 打包成独立 asset（而非内联）——
+  // 实测云端构建对内联脚本偶发丢失、对 asset 打包稳定，
+  // 故引入 sfx 依赖名正言顺地走打包路线，并顺带让彩蛋触发提示音。
+  import { playRole } from '../lib/sfx';
+
+  const KONAMI = [
+    'ArrowUp',
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowLeft',
+    'ArrowRight',
+    'b',
+    'a',
+  ];
+  let combo = 0;
+
+  document.addEventListener('keydown', (e) => {
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (key === KONAMI[combo]) {
+      combo += 1;
+      if (combo === KONAMI.length) {
+        combo = 0;
+        // 背景「系统全开」联动（BgFx core 模式订阅；爆裂留作前景层）
+        window.dispatchEvent(new CustomEvent('8bit:cheat'));
+        burst();
+        toast();
+      }
+    } else {
+      combo = key === KONAMI[0] ? 1 : 0;
+    }
+  });
+
+  interface Particle {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    size: number;
+    color: string;
+    life: number;
+  }
+
+  function burst(): void {
+    playRole('click');
+    const canvas = document.createElement('canvas');
+    canvas.className = 'konami-burst';
+    const ctx = canvas.getContext('2d');
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width = Math.round(innerWidth * dpr);
+    canvas.height = Math.round(innerHeight * dpr);
+    ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+    document.body.appendChild(canvas);
+
+    const color = (): string => {
+      const n = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--gb-2').trim().slice(1), 16) || 0xffa300;
+      return `rgb(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255})`;
+    };
+    const cx = innerWidth / 2;
+    const cy = innerHeight / 2;
+    const parts: Particle[] = Array.from({ length: 110 }, () => {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 2 + Math.random() * 7;
+      return {
+        x: cx,
+        y: cy,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        size: 1 + Math.floor(Math.random() * 3),
+        color: color(),
+        life: 40 + Math.random() * 30,
+      };
+    });
+
+    let f = 0;
+    const tick = () => {
+      ctx!.clearRect(0, 0, innerWidth, innerHeight);
+      f += 1;
+      const alive = [];
+      for (const p of parts) {
+        if (p.life <= 0) continue;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.08; // 重力
+        p.life -= 1;
+        ctx!.fillStyle = p.color;
+        ctx!.globalAlpha = Math.min(1, p.life / 30);
+        ctx!.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+        alive.push(p);
+      }
+      ctx!.globalAlpha = 1;
+      if (alive.length > 0) requestAnimationFrame(tick);
+      else canvas.remove();
+    };
+    requestAnimationFrame(tick);
+  }
+
+  function toast(): void {
+    const old = document.querySelector('.konami-toast');
+    old?.remove();
+    const div = document.createElement('div');
+    div.className = 'konami-toast';
+    div.textContent = '↑↑↓↓←→←→BA · CONGRATULATION!';
+    document.body.appendChild(div);
+    setTimeout(() => div.remove(), 2600);
+  }
+</script>
+
+<style>
+  .konami-burst {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  .konami-toast {
+    position: fixed;
+    top: 3.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 101;
+    padding: 0.6rem 1rem;
+    border: 4px solid var(--gb-2);
+    background-color: var(--gb-0);
+    color: var(--gb-3);
+    font-family: var(--font-pixel);
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+  }
+</style>

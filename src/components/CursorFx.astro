@@ -1,0 +1,434 @@
+---
+/**
+ * CursorFx —— 原创 8-bit 鼠标装置（v2 retro-experiment，桌面级）。
+ *
+ * 三层一体：
+ * - 像素准星（reticle）：12px 像素十字，位置按像素网格吸附（4px 步进），
+ *   悬停文本/链接/hero 时按整数步放大并改变形态
+ * - 光屑尾迹（trail）：滑动时拖出主题色像素屑（additive 辉光，carbon bg-fx）
+ * - 点击脉冲（pulse）：pointerdown 扩散像素环 + 微闪（与 SFX 点击音呼应）
+ *
+ * 行为约定：
+ * - 仅桌面鼠标设备（hover+fine）启用；触屏跳过（原生触摸交互）。
+ * - 随主题配色（--gb-0/--gb-2/--gb-3，MutationObserver 跟随 13 套主题）；
+ *   深色主题 additive、浅色退回 source-over（防洗白）。
+ * - prefers-reduced-motion：只画静态准星（无尾迹/无脉冲动画）。
+ * - 偏好 '8bitme:cursor'（默认开）；关闭 = 恢复原生光标，一切停摆。
+ * - 性能：dpr ≤1.5、尾迹粒子上限 ~90、页面隐藏时停帧。
+ */
+---
+
+<canvas id="cursorfx-canvas" aria-hidden="true"></canvas>
+{/* 按钮已迁到 SideDock.astro（侧边折叠仓）。canvas 仍在这里，模式由 dock
+    通过 cursorPref('8bitme:cursor') 写入，下面 frame() 头部轮询 → 切形态 + 重画。 */}
+
+<script>
+  import { cursorPref } from '../lib/prefs';
+  import { hexToRgba } from '../lib/palette';
+  import { createFxRuntime, setAdditive, type FxRuntimeHost } from '../lib/fx-runtime';
+
+  const canvas = document.getElementById('cursorfx-canvas') as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d')!;
+  const btn = document.getElementById('cursor-toggle') as HTMLButtonElement;
+
+  // ---- 启用条件：桌面鼠标 + 非触屏；任何不满足直接静默退出 ----
+  const fine = matchMedia('(hover: hover) and (pointer: fine)');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  if (!fine.matches) {
+    canvas.remove();
+    btn.remove();
+  } else {
+    void init();
+  }
+
+  function init(): void {
+    const MODES = ['off', 'frame', 'dot', 'block', 'cross', 'reticle'] as const;
+    type Mode = (typeof MODES)[number];
+    const LABELS: Record<Mode, string> = {
+      off: 'OFF',
+      frame: 'FRAME',
+      dot: 'DOT',
+      block: 'BLK',
+      cross: 'CROSS',
+      reticle: 'RET',
+    };
+    let mode: Mode = normalize(cursorPref.get());
+    const useFx = () => mode !== 'off';
+
+    function normalize(v: string | null): Mode {
+      return v && (MODES as readonly string[]).includes(v) ? (v as Mode) : 'frame';
+    }
+
+    // 默认视为指针已在页面内（打开页面时指针通常就在视口里，
+    // 依赖 pointerenter 会永远不启动——曾导致光标完全不可见）
+    let active = true;
+    let t = 0;
+    let w = 0;
+    let h = 0;
+    let px = 0;
+    let py = 0; // 目标（原生坐标）
+    let rx = 0;
+    let ry = 0; // 渲染位（lerp → 网格吸附）
+    let state: 'normal' | 'link' | 'text' | 'hero' = 'normal';
+    let hoverTarget: Element | null = null;
+
+    interface Mote {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      size: number;
+      life: number;
+      kind: 0 | 1;
+    }
+    interface Ring {
+      x: number;
+      y: number;
+      t0: number;
+    }
+    let motes: Mote[] = [];
+    const rings: Ring[] = [];
+    let lastEmit = 0;
+
+    // ---- 配色（fx runtime 提供 palette + additive 门控；[data-theme] 跟随在运行时） ----
+    const host: FxRuntimeHost = {
+      getSize: () => ({ width: innerWidth, height: innerHeight }),
+      shouldRun: () => useFx() && active,
+      frame: () => {
+        // 模式同步：dock 写 cursorPref → 我们读最新值并比对
+        const live = normalize(cursorPref.get());
+        if (live !== mode) {
+          mode = live;
+          apply();
+        }
+        t += 1;
+        step();
+        draw();
+      },
+      onTheme: (p, a) => {
+        palette = p;
+        additive = a;
+        styles = buildStyles();
+      },
+      onResize: ({ width, height }) => {
+        w = width;
+        h = height;
+      },
+    };
+    const rt = createFxRuntime(canvas, host);
+    /** 运行态的事件门（与 runtime 启停裁决同源；曾为组件私有 running） */
+    const fxLive = () => useFx() && active && !document.hidden;
+    let palette = rt.palette;
+    let styles = buildStyles();
+    let additive = rt.additive;
+
+    function buildStyles() {
+      return {
+        reticle: hexToRgba(palette.light, 0.9),
+        reticleGlow: hexToRgba(palette.accent, 0.35),
+        dot: hexToRgba(palette.accent, 1),
+        moteA: hexToRgba(palette.accent, 0.8),
+        moteB: hexToRgba(palette.light, 0.55),
+        ring: hexToRgba(palette.accent, 0.7),
+      };
+    }
+
+    // ---- 状态：悬停目标 → 光标形态 ----
+    function isInteractive(el: Element): boolean {
+      return Boolean(
+        el.closest('a, button, [role="button"], .pixel-btn, input, select, label')
+      );
+    }
+    function isText(el: Element): boolean {
+      return Boolean(el.closest('p, h1, h2, h3, h4, h5, h6, li, span, .text-dim'));
+    }
+
+    document.addEventListener('pointerover', (e) => {
+      hoverTarget = e.target instanceof Element ? e.target : null;
+      updateState();
+    });
+    document.addEventListener('pointerout', () => {
+      hoverTarget = null;
+      updateState();
+    });
+
+    function updateState() {
+      const next: typeof state = !hoverTarget
+        ? 'normal'
+        : hoverTarget.closest('#hero')
+          ? 'hero'
+          : isInteractive(hoverTarget)
+            ? 'link'
+            : isText(hoverTarget)
+              ? 'text'
+              : 'normal';
+      if (next !== state) {
+        state = next;
+        document.body.setAttribute('data-cursor-state', state);
+      }
+    }
+
+    // ---- 指针事件 ----
+    document.addEventListener('pointermove', (e) => {
+      px = e.clientX;
+      py = e.clientY;
+      // 尾迹从准星实际位置发射（而非原生指针），与可见光标同步
+      if (fxLive() && !reduced.matches && t - lastEmit >= 2) {
+        spawnMote();
+        spawnMote();
+        lastEmit = t;
+      }
+    });
+
+    document.addEventListener('pointerdown', (e) => {
+      if (!fxLive()) return;
+      rings.push({ x: e.clientX, y: e.clientY, t0: t });
+      if (rings.length > 6) rings.shift();
+    });
+
+    document.addEventListener('pointerenter', () => {
+      // 只影响循环启停；不碰 cursor:none（由 apply/enabled 唯一控制，
+      // 防止视口贴边进出导致双光标并存）
+      active = true;
+      rt.sync();
+    });
+    document.addEventListener('pointerleave', () => {
+      active = false;
+      rt.sync();
+      ctx.clearRect(0, 0, w, h);
+    });
+
+    function spawnMote() {
+      if (motes.length > 90) motes.shift();
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 0.3 + Math.random() * 1.1;
+      motes.push({
+        x: rx,
+        y: ry,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd - 0.25,
+        size: 1 + Math.floor(Math.random() * 3),
+        life: 16 + Math.floor(Math.random() * 14),
+        kind: Math.random() < 0.5 ? 0 : 1,
+      });
+    }
+
+    // ---- 帧更新 ----
+    function step() {
+      // 位置：直接按 4px 网格吸附（像素步进即风格）；不做 lerp 缓动，
+      // 避免“不跟手”——慢移时网格跳动、快移时被甩开（曾反馈不跟手/不稳）
+      rx = Math.round(px / 4) * 4;
+      ry = Math.round(py / 4) * 4;
+      if (!reduced.matches) {
+        for (const m of motes) {
+          m.x += m.vx;
+          m.y += m.vy;
+          m.vy += 0.02;
+          m.life -= 1;
+        }
+        motes = motes.filter((m) => m.life > 0);
+        for (let i = rings.length - 1; i >= 0; i--) {
+          if (t - rings[i].t0 > 26) rings.splice(i, 1);
+        }
+      }
+    }
+
+    // ---- 绘制（五种形态，点击循环切换） ----
+    function sizeFor(): number {
+      return state === 'link' ? 28 : state === 'text' ? 16 : state === 'hero' ? 40 : 14;
+    }
+
+    function drawReticle() {
+      // 经典：十字 + 四角括号 + 中心点
+      const size = sizeFor();
+      const x = Math.round(rx);
+      const y = Math.round(ry);
+      const half = Math.floor(size / 2);
+      setAdditive(ctx, additive);
+      ctx.fillStyle = styles.reticleGlow;
+      ctx.fillRect(x - half - 2, y - 2, size + 4, 4);
+      ctx.fillRect(x - 2, y - half - 2, 4, size + 4);
+      setAdditive(ctx, false);
+      ctx.fillStyle = styles.reticle;
+      ctx.fillRect(x - half, y - 1, size, 2);
+      ctx.fillRect(x - 1, y - half, 2, size);
+      const bl = Math.max(2, Math.floor(size / 5));
+      ctx.fillRect(x - half, y - half, bl, 2);
+      ctx.fillRect(x - half, y - half, 2, bl);
+      ctx.fillRect(x + half - bl, y - half, bl, 2);
+      ctx.fillRect(x + half - 2, y - half, 2, bl);
+      ctx.fillRect(x - half, y + half - 2, bl, 2);
+      ctx.fillRect(x - half, y + half - bl, 2, bl);
+      ctx.fillRect(x + half - bl, y + half - 2, bl, 2);
+      ctx.fillRect(x + half - 2, y + half - bl, 2, bl);
+      ctx.fillStyle = styles.dot;
+      ctx.fillRect(x - 1, y - 1, 3, 3);
+    }
+
+    function drawFrame() {
+      // 空心像素框选（描边 + 四角加粗）—— Game Boy 选择框
+      const size = sizeFor();
+      const x = Math.round(rx);
+      const y = Math.round(ry);
+      const half = Math.floor(size / 2);
+      setAdditive(ctx, additive);
+      ctx.fillStyle = styles.reticleGlow;
+      ctx.fillRect(x - half - 2, y - half - 2, size + 4, size + 4);
+      setAdditive(ctx, false);
+      ctx.fillStyle = styles.reticle;
+      // 描边（2px）
+      ctx.fillRect(x - half, y - half, size, 2);
+      ctx.fillRect(x - half, y + half - 2, size, 2);
+      ctx.fillRect(x - half, y - half, 2, size);
+      ctx.fillRect(x + half - 2, y - half, 2, size);
+      // 四角加粗
+      const c = Math.max(3, Math.floor(size / 4));
+      ctx.fillRect(x - half, y - half, c, c);
+      ctx.fillRect(x + half - c, y - half, c, c);
+      ctx.fillRect(x - half, y + half - c, c, c);
+      ctx.fillRect(x + half - c, y + half - c, c, c);
+      ctx.fillStyle = styles.dot;
+      ctx.fillRect(x - 1, y - 1, 3, 3);
+    }
+
+    function drawDot() {
+      // 极简：实心高亮点 + 淡辉光
+      const grow = state === 'link' ? 3 : state === 'hero' ? 3 : state === 'text' ? 1 : 0;
+      const s = 4 + grow;
+      const x = Math.round(rx);
+      const y = Math.round(ry);
+      setAdditive(ctx, additive);
+      ctx.fillStyle = styles.reticleGlow;
+      ctx.fillRect(x - s - 2, y - s - 2, (s + 2) * 2, (s + 2) * 2);
+      setAdditive(ctx, false);
+      ctx.fillStyle = styles.reticle;
+      ctx.fillRect(x - s, y - s, s * 2, s * 2);
+    }
+
+    function drawBlock() {
+      // 实心像素方块 + 光晕
+      const size = state === 'link' ? 14 : state === 'hero' ? 18 : state === 'text' ? 10 : 8;
+      const x = Math.round(rx);
+      const y = Math.round(ry);
+      const half = Math.floor(size / 2);
+      setAdditive(ctx, additive);
+      ctx.fillStyle = styles.reticleGlow;
+      ctx.fillRect(x - half - 3, y - half - 3, size + 6, size + 6);
+      setAdditive(ctx, false);
+      ctx.fillStyle = styles.reticle;
+      ctx.fillRect(x - half, y - half, size, size);
+      ctx.fillStyle = styles.dot;
+      ctx.fillRect(x - 1, y - 1, 2, 2);
+    }
+
+    function drawCross() {
+      // 全屏极细十字线（1px）+ 中心点
+      const x = Math.round(rx);
+      const y = Math.round(ry);
+      const bright = state === 'hero' ? 0.95 : state === 'link' ? 0.5 : 0.3;
+      ctx.fillStyle = styles.moteB;
+      ctx.globalAlpha = bright * 0.6;
+      ctx.fillRect(x, 0, 1, h);
+      ctx.fillRect(0, y, w, 1);
+      ctx.globalAlpha = 1;
+      setAdditive(ctx, additive);
+      ctx.fillStyle = styles.reticleGlow;
+      ctx.fillRect(x - 4, y - 1, 9, 2);
+      ctx.fillRect(x - 1, y - 4, 2, 9);
+      setAdditive(ctx, false);
+      ctx.fillStyle = styles.dot;
+      ctx.fillRect(x - 1, y - 1, 3, 3);
+    }
+
+    function drawCursor() {
+      if (mode === 'reticle') drawReticle();
+      else if (mode === 'frame') drawFrame();
+      else if (mode === 'dot') drawDot();
+      else if (mode === 'block') drawBlock();
+      else if (mode === 'cross') drawCross();
+    }
+
+    function drawMotes() {
+      if (motes.length === 0) return;
+      setAdditive(ctx, additive);
+      for (const m of motes) {
+        ctx.fillStyle = m.kind === 0 ? styles.moteA : styles.moteB;
+        ctx.globalAlpha = Math.min(1, m.life / 14);
+        ctx.fillRect(Math.round(m.x), Math.round(m.y), m.size, m.size);
+      }
+      ctx.globalAlpha = 1;
+      setAdditive(ctx, false);
+    }
+
+    function drawRings() {
+      if (rings.length === 0) return;
+      setAdditive(ctx, additive);
+      for (const r of rings) {
+        const age = t - r.t0;
+        const rad = 5 + age * 1.7;
+        ctx.fillStyle = styles.ring;
+        ctx.globalAlpha = Math.max(0, 0.6 - age * 0.024);
+        ctx.fillRect(Math.round(r.x - rad), Math.round(r.y - rad), 2, rad * 2);
+        ctx.fillRect(Math.round(r.x + rad - 2), Math.round(r.y - rad), 2, rad * 2);
+        ctx.fillRect(Math.round(r.x - rad), Math.round(r.y - rad), rad * 2, 2);
+        ctx.fillRect(Math.round(r.x - rad), Math.round(r.y + rad - 2), rad * 2, 2);
+      }
+      ctx.globalAlpha = 1;
+      setAdditive(ctx, false);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, w, h);
+      if (!useFx()) return;
+      if (!reduced.matches) {
+        drawMotes();
+        drawRings();
+      }
+      drawCursor();
+    }
+
+    // ---- 开关 / 形态循环（按钮在 SideDock；此处只管 canvas 与 class） ----
+    function apply() {
+      const on = useFx();
+      document.documentElement.classList.toggle('cursor-fx-on', on);
+      ctx.clearRect(0, 0, w, h);
+      if (!on) {
+        // 恢复原生光标
+        document.documentElement.classList.remove('cursor-fx-on');
+      }
+      rt.sync();
+    }
+
+    // 模式同步：dock 写 cursorPref → 我们读最新值并比对
+    const liveMode = normalize(cursorPref.get());
+    if (liveMode !== mode) {
+      mode = liveMode;
+      apply();
+    }
+
+    // 启动
+    apply();
+    rt.resize();
+    rt.sync();
+  }
+</script>
+
+<style>
+  #cursorfx-canvas {
+    position: fixed;
+    inset: 0;
+    /* 关键：替换元素需显式尺寸 —— 曾因缺宽高按 attribute 大小渲染，
+       dpr>1 时准星画在 指针×dpr 处，与真鼠标错位（点击也跟着错） */
+    width: 100vw;
+    height: 100vh;
+    z-index: 110;
+    pointer-events: none;
+  }
+
+  /* 启用时隐藏原生光标（全局规则，:global() 防止被 Astro scope 化——
+     曾因 * 被改写为组件专属选择器导致链接区双光标并存） */
+  :global(html.cursor-fx-on),
+  :global(html.cursor-fx-on *) {
+    cursor: none !important;
+  }
+</style>

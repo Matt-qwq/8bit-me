@@ -1,0 +1,132 @@
+---
+import AvatarSprite from '../AvatarSprite.astro';
+import { siteConfig, url } from '../../lib/config';
+---
+
+<section id="hero" class="hero">
+  <div class="container hero-inner">
+    <AvatarSprite size={112} />
+    <div class="hero-text">
+      <p class="text-pixel kicker">Press START</p>
+      <h1>{siteConfig.title}</h1>
+      <p class="tagline text-pixel">{siteConfig.tagline}</p>
+      <p class="intro">
+        你好，我是 {siteConfig.author} —— 用 AI 辅助工具链做工程化落地、
+        把 RPA 迁移 / 数据管道 / 黑盒逆向里的乱摊子收敛成体系的
+        工程师。这个 8-bit 实验场记录方法论与实验：能力证据在作品集，
+        长文在博客。
+      </p>
+      <div class="actions">
+        <a class="pixel-btn" href="#projects" data-sfx-role="nav" data-sfx-hover>作品集</a>
+        <a class="pixel-btn" href={url('blog')} data-sfx-role="nav" data-sfx-hover>阅读博客</a>
+        <a class="pixel-btn" href="https://github.com/Matt-qwq" target="_blank" rel="noopener noreferrer" data-sfx-role="click" data-sfx-hover>GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    padding: 5.5rem 0 4rem;
+  }
+
+  .hero-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  .kicker {
+    margin: 0 0 0.75rem;
+    font-size: 0.65rem;
+    color: var(--gb-2);
+    letter-spacing: 0.15em;
+    animation: blink 1.6s steps(2, start) infinite;
+  }
+
+  h1 {
+    font-size: clamp(1.5rem, 6vw, 2rem); /* 窄屏 6vw 收到 1.5rem(24px) 防溢出；上限 2rem(32px)；两端均 4px 步进 */
+    line-height: 1.4;
+    margin-bottom: 0.5rem;
+  }
+
+  .tagline {
+    font-size: 0.7rem;
+    color: var(--gb-2);
+    letter-spacing: 0.1em;
+    margin-bottom: 1.5rem;
+  }
+
+  .intro {
+    max-width: 34rem;
+    color: var(--color-text-dim);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 1.75rem;
+  }
+
+  /* 首屏 CTA 放大（仅 hero，卡片内 VIEW 保持原尺寸不变） */
+  .actions .pixel-btn {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.8rem;
+  }
+
+  @media (max-width: 640px) {
+    .hero-inner {
+      flex-direction: column;
+      text-align: center;
+    }
+    .actions {
+      justify-content: center;
+    }
+  }
+
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  /* 首屏载入错峰（reduced-motion 走全局动画禁用） */
+  .hero-inner > * {
+    animation: hero-rise 0.32s steps(3) both;
+  }
+
+  .hero-text > :nth-child(1) {
+    animation-delay: 0.05s;
+  }
+  .hero-text > :nth-child(2) {
+    animation-delay: 0.1s;
+  }
+  .hero-text > :nth-child(3) {
+    animation-delay: 0.15s;
+  }
+  .hero-text > :nth-child(4) {
+    animation-delay: 0.2s;
+  }
+  .hero-text > :nth-child(5) {
+    animation-delay: 0.25s;
+  }
+
+  @keyframes hero-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+</style>

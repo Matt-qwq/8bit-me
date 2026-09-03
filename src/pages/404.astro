@@ -1,0 +1,199 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { siteConfig, url } from '../lib/config';
+---
+
+<BaseLayout title={`404 | ${siteConfig.title}`} description="页面不存在或已被移除。玩一局像素打地鼠解解闷？">
+  <div class="container">
+    <h2 class="section-title">
+      <span class="num text-pixel">?</span><span class="text-pixel">404</span> 未找到
+    </h2>
+    <p>你访问的页面不存在（可能被移除，或是一篇 draft 文章）。</p>
+
+    <div class="pixel-panel arcade">
+      <p class="arcade-title text-pixel">PIXEL MOLE · 像素打地鼠</p>
+      <canvas id="mole-canvas" class="mole-canvas" width="320" height="200"></canvas>
+      <div class="arcade-hud">
+        <span class="text-pixel" id="mole-score">SCORE 0</span>
+        <span class="text-pixel" id="mole-time">TIME --</span>
+        <span class="text-pixel" id="mole-best">BEST --</span>
+      </div>
+      <button id="mole-start" class="pixel-btn" type="button" data-sfx-role="game">START</button>
+      <a class="pixel-btn" href={url('')} data-sfx-role="nav">← 回首页</a>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import { playRole } from '../lib/sfx';
+
+  const canvas = document.getElementById('mole-canvas') as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d')!;
+  const scoreEl = document.getElementById('mole-score')!;
+  const timeEl = document.getElementById('mole-time')!;
+  const bestEl = document.getElementById('mole-best')!;
+  const startBtn = document.getElementById('mole-start') as HTMLButtonElement;
+
+  const BEST_KEY = '8bitme:404best';
+  const COLS = 6;
+  const ROWS = 4;
+  const CW = canvas.width / COLS;
+  const CH = canvas.height / ROWS;
+  const DURATION = 20; // 秒
+
+  const accent = () =>
+    getComputedStyle(document.documentElement).getPropertyValue('--gb-2').trim() || '#ffa300';
+  const light = () =>
+    getComputedStyle(document.documentElement).getPropertyValue('--gb-3').trim() || '#fff1e8';
+
+  let best = Number(localStorage.getItem(BEST_KEY) || 0);
+  let over = true;
+  let score = 0;
+  let remain = DURATION;
+  let raf = 0;
+  let last = 0;
+  let target = { cx: -1, cy: -1, born: 0, life: 900 };
+
+  function pick(): void {
+    const i = Math.floor(Math.random() * COLS * ROWS);
+    target = {
+      cx: (i % COLS) * CW + CW / 2,
+      cy: Math.floor(i / COLS) * CH + CH / 2,
+      born: performance.now(),
+      life: 600 + Math.random() * 400,
+    };
+  }
+
+  function draw(now: number): void {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // 网格
+    ctx.strokeStyle = accent();
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 1;
+    for (let c = 1; c < COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(c * CW, 0);
+      ctx.lineTo(c * CW, canvas.height);
+      ctx.stroke();
+    }
+    for (let r = 1; r < ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(0, r * CH);
+      ctx.lineTo(canvas.width, r * CH);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // 目标：闪烁像素块
+    if (!over && target.cx >= 0) {
+      const age = now - target.born;
+      const blink = Math.sin(age / 90) > 0 ? 1 : 0.45;
+      ctx.globalAlpha = Math.max(0.15, 1 - age / target.life) * blink;
+      ctx.fillStyle = accent();
+      ctx.fillRect(Math.round(target.cx - 8), Math.round(target.cy - 8), 16, 16);
+      ctx.fillStyle = light();
+      ctx.fillRect(Math.round(target.cx - 4), Math.round(target.cy - 4), 8, 8);
+      ctx.globalAlpha = 1;
+      if (age > target.life) pick();
+    }
+  }
+
+  function loop(now: number): void {
+    if (over) return;
+    if (now - last > 1000) {
+      remain -= 1;
+      last = now;
+      timeEl.textContent = `TIME ${remain}`;
+      if (remain <= 0) end();
+    }
+    draw(now);
+    raf = requestAnimationFrame(loop);
+  }
+
+  function end(): void {
+    over = true;
+    if (raf) cancelAnimationFrame(raf);
+    const isBest = score > (best || 0);
+    if (isBest) {
+      best = score;
+      try {
+        localStorage.setItem(BEST_KEY, String(best));
+      } catch {
+        /* ignore */
+      }
+    }
+    scoreEl.textContent = `SCORE ${score}${isBest ? ' · NEW BEST!' : ''}`;
+    bestEl.textContent = `BEST ${best}`;
+    timeEl.textContent = 'TIME OVER';
+    startBtn.textContent = 'REPLAY';
+    startBtn.hidden = false;
+  }
+
+  function start(): void {
+    over = false;
+    score = 0;
+    remain = DURATION;
+    last = performance.now();
+    scoreEl.textContent = 'SCORE 0';
+    timeEl.textContent = `TIME ${remain}`;
+    bestEl.textContent = `BEST ${best || '--'}`;
+    startBtn.hidden = true;
+    pick();
+    raf = requestAnimationFrame(loop);
+  }
+
+  // 命中检测（点 / 触屏）
+  canvas.addEventListener('pointerdown', (e) => {
+    if (over) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
+    if (Math.abs(x - target.cx) <= CW / 2 && Math.abs(y - target.cy) <= CH / 2) {
+      score += 1;
+      scoreEl.textContent = `SCORE ${score}`;
+      playRole('game');
+      pick();
+    }
+  });
+
+  startBtn.addEventListener('click', start);
+
+  bestEl.textContent = `BEST ${best || '--'}`;
+</script>
+
+<style>
+  .arcade {
+    margin-block: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: 24rem;
+  }
+
+  .arcade-title {
+    font-size: 0.6rem;
+    color: var(--gb-2);
+    letter-spacing: 0.1em;
+  }
+
+  .mole-canvas {
+    width: 100%;
+    max-width: 20rem;
+    image-rendering: pixelated;
+    border: 3px solid var(--gb-1);
+    background-color: color-mix(in srgb, var(--gb-0) 78%, #000);
+    cursor: crosshair;
+    touch-action: manipulation;
+  }
+
+  .arcade-hud {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.55rem;
+    color: var(--color-text-dim);
+  }
+
+  #mole-start {
+    min-width: 7rem;
+  }
+</style>

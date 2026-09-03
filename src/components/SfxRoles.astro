@@ -1,0 +1,14 @@
+---
+/**
+ * SfxRoles —— chip-tune 音效中央委托挂载点（ADR-0007）。
+ * 不渲染任何 DOM；脚本经 Astro 打包为独立 asset（与 Konami 同因：内联脚本云端偶发丢失），
+ * 页面加载后执行 bindSfxRoles()：全站 [data-sfx-role] 点击 / [data-sfx-hover] 悬停一次接线。
+ * 放在 body 末尾，保证 querySelectorAll 时 DOM 已就绪。
+ */
+---
+
+<script>
+  import { bindSfxRoles } from '../lib/sfx';
+
+  bindSfxRoles();
+</script>

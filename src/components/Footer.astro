@@ -1,0 +1,50 @@
+---
+import { siteConfig } from '../lib/config';
+const year = new Date().getFullYear();
+---
+
+<footer class="footer">
+  <div class="container">
+    <p class="text-pixel foot-line">
+      © {year} {siteConfig.author} · built with Astro
+    </p>
+    <p class="foot-credit">
+      中文像素字体 <a href="https://github.com/SolidZORO/zpix-pixel-font" target="_blank" rel="noopener" data-sfx-role="click">Zpix</a> by SolidZORO
+    </p>
+  </div>
+
+  <!-- 猫（截图脚本/过往草稿）已从 footer 移除：2026-08-31 决定只在 Nav 放一只睡猫，底部不再放猫。 -->
+</footer>
+
+<style>
+  /* 普通页脚：贴在内容底部一行，不再独占一屏（2026-08-31 作者要求）。 */
+  .footer {
+    position: relative;
+    margin-top: 0;
+    padding: 1rem 0;
+    border-top: 1px solid color-mix(in srgb, var(--gb-1) 40%, transparent);
+  }
+
+  .foot-line {
+    font-size: 0.55rem;
+    line-height: 1.6;
+    color: var(--color-text-dim);
+    text-align: center;
+  }
+
+  .foot-credit {
+    margin: 0.4rem 0 0;
+    font-family: var(--font-body);
+    font-size: 0.6rem;
+    line-height: 1.5;
+    color: var(--color-text-dim);
+    text-align: center;
+  }
+  .foot-credit a {
+    color: var(--gb-2);
+    text-decoration: none;
+  }
+  .foot-credit a:hover {
+    text-decoration: underline;
+  }
+</style>

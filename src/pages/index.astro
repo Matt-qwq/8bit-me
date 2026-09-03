@@ -1,0 +1,310 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/sections/Hero.astro';
+import About from '../components/sections/About.astro';
+import Projects from '../components/sections/Projects.astro';
+import Skills from '../components/sections/Skills.astro';
+import Contact from '../components/sections/Contact.astro';
+---
+
+<BaseLayout bgfxHeroVivid>
+  <Hero />
+  <About />
+  <Projects />
+  <Skills />
+  <Contact />
+</BaseLayout>
+
+<script>
+  // 整屏翻页式 PPT：每个 section（01–04）是一屏，滚动到位即「切入」、
+  // 滚离即「切出」，像 PPT 翻页，每次进出都重放（非一次性）。
+  // 用 WAAPI（非 CSS transition）→ 天然绕过 reduced-motion 的 !important 压制，
+  // 与 .ptrans-host 同样按作者意愿豁免；作者系统开减少动画也照常播放。
+  // 单一运动种子 Silk（ap-motion-vocab）+ stagger-cascade（子元素依次）。
+  const SILK = 'cubic-bezier(0.22, 0.9, 0.24, 1)';
+  const DUR = 460;
+  const STAGGER = 85; // 错峰步长（kavindu delay → Overlapping 原则）
+
+  // 角点已由 BaseLayout 全站注入；首页翻页式 section 内面板角点初始隐藏，
+  // 待 enter() 点亮（避免进入前已可见的闪动）。非翻页页（blog/404）角点默认可见。
+  document
+    .querySelectorAll('main#main > section[id] .pixel-panel .pp-pad')
+    .forEach((pad) => ((pad as HTMLElement).style.opacity = '0'));
+
+  // 角点点亮：scale 0.6→1，四角 85ms 内部错峰，Silk；WAAPI 天生绕 reduced-motion 压制。
+  const ignitePads = (host: HTMLElement, baseDelay = 0) => {
+    const pads = host.querySelectorAll('.pp-pad');
+    pads.forEach((pad, i) =>
+      (pad as HTMLElement).animate(
+        [{ opacity: 0, transform: 'scale(0.6)' }, { opacity: 1, transform: 'scale(1)' }],
+        { duration: 220, delay: baseDelay + i * STAGGER, easing: SILK, fill: 'both' }
+      )
+    );
+  };
+
+  // 每 section：标题先行，随后各卡片/模块依次切入。
+  // 注意：projects 的卡片不再在此统一切入——它由「章节内翻页」接管（见 renderSub），
+  // 这里只保留标题，避免 6 张卡一次性全亮（不符“一屏一翻”）。
+  const plan = [
+    { sec: '#about',    mods: ['.section-title', '.pixel-panel p'] },
+    { sec: '#projects', mods: ['.section-title'] },
+    { sec: '#skills',   mods: ['.section-title', 'li.row'] },
+    { sec: '#contact',  mods: ['.section-title', 'li'] },
+  ];
+
+  // 初始全隐藏（避免入场前可见闪烁）；仅 JS 加类，无 JS 时内容默认可见
+  const revealEls = [];
+  for (const p of plan) {
+    const sec = document.querySelector(p.sec);
+    if (!sec) continue;
+    for (const sel of p.mods) {
+      sec.querySelectorAll(sel).forEach((el) => {
+        el.classList.add('reveal-card');
+        revealEls.push(el);
+      });
+    }
+  }
+
+  const play = (els, from, to) =>
+    els.forEach((el, i) => {
+      el.getAnimations?.().forEach((a) => a.cancel());
+      el.animate([from, to], { duration: DUR, delay: i * STAGGER, easing: SILK, fill: 'both' });
+    });
+
+  const enter = (sec) => {
+    const p = plan.find((x) => x.sec === '#' + sec.id);
+    if (p) {
+      const els = [];
+      for (const sel of p.mods) sec.querySelectorAll(sel).forEach((el) => els.push(el));
+      play(
+        els,
+        { opacity: 0, transform: 'translateY(30px) scale(0.985)' },
+        { opacity: 1, transform: 'translateY(0) scale(1)' }
+      );
+    }
+    // 角点随章节进入点亮一次（伪元素改真实子元素，WAAPI 控入场）
+    sec.querySelectorAll('.pixel-panel').forEach((panel) => ignitePads(panel as HTMLElement, 0));
+    // projects：点亮当前激活子屏（进入章节时默认子屏 0，从下往上进则是末屏）
+    if (sec.id === 'projects') renderSub(sec, subIdx.get(sec) ?? 0, true);
+  };
+
+  const exit = (sec) => {
+    const p = plan.find((x) => x.sec === '#' + sec.id);
+    if (p) {
+      const els = [];
+      for (const sel of p.mods) sec.querySelectorAll(sel).forEach((el) => els.push(el));
+      play(
+        els,
+        { opacity: 1, transform: 'translateY(0) scale(1)' },
+        { opacity: 0, transform: 'translateY(-26px) scale(0.99)' }
+      );
+    }
+    // projects：激活子屏的卡片随之切出
+    if (sec.id === 'projects') {
+      const i = subIdx.get(sec) ?? 0;
+      const pg = sec.querySelectorAll('.proj-page')[i] as HTMLElement | undefined;
+      if (pg) play(Array.from(pg.querySelectorAll('.pixel-panel.card')), SHOWN, OUT);
+    }
+  };
+
+  // ── 章节内翻页（projects 等高章节）──────────────────────────────
+  // 每个 .proj-page 是一“子屏”，硬切单位比章节更细。一次滚动手势=翻一子屏，
+  // 翻到首/尾子屏才进/出整章。卡片切入切出用 WAAPI（天然绕 reduced-motion 压制），
+  // 与整章动画同种子 Silk。
+  const HIDDEN = { opacity: 0, transform: 'translateY(30px) scale(0.985)' };
+  const SHOWN = { opacity: 1, transform: 'translateY(0) scale(1)' };
+  const OUT = { opacity: 0, transform: 'translateY(-26px) scale(0.99)' };
+  const subIdx = new Map<HTMLElement, number>();
+  const cardsOf = (pg: HTMLElement) =>
+    Array.from(pg.querySelectorAll('.pixel-panel.card')) as HTMLElement[];
+
+  const renderSub = (sec: HTMLElement, i: number, animate: boolean) => {
+    const pages = Array.from(sec.querySelectorAll('.proj-page')) as HTMLElement[];
+    if (!pages.length) return;
+    i = Math.max(0, Math.min(pages.length - 1, i));
+    subIdx.set(sec, i);
+    pages.forEach((pg, k) => {
+      const cards = cardsOf(pg);
+      const active = k === i;
+      if (active) {
+        pg.classList.add('is-active');
+        pg.style.display = 'grid';
+        pg.dataset.shown = '1';
+        if (animate) {
+          play(cards, HIDDEN, SHOWN);
+          // 角点随卡片同网格点亮：基线 = 卡片在子屏内的错峰位置
+          cards.forEach((c, ci) => ignitePads(c, ci * STAGGER));
+        } else {
+          cards.forEach((c) => { c.getAnimations?.().forEach((a) => a.cancel()); c.style.opacity = '1'; c.style.transform = 'none'; });
+        }
+      } else {
+        pg.classList.remove('is-active');
+        if (animate && pg.dataset.shown === '1') {
+          // 旧子屏先切出，动画结束再隐藏（display:none 会掐断动画）
+          play(cards, SHOWN, OUT);
+          window.setTimeout(() => { pg.style.display = 'none'; }, DUR + 30);
+        } else {
+          pg.style.display = 'none';
+          cards.forEach((c) => { c.getAnimations?.().forEach((a) => a.cancel()); c.style.opacity = '0'; c.style.transform = 'translateY(-26px) scale(0.99)'; });
+        }
+      }
+    });
+    sec.querySelectorAll('.proj-pager .dot').forEach((d, k) =>
+      (d as HTMLElement).classList.toggle('is-active', k === i)
+    );
+  };
+
+  // 启用分页模式（仅此处加类）：无 JS 时 3 个子屏平铺可见，内容不丢；
+  // 有 JS 才切到“一次只显示一屏”。必须在任何 renderSub 之前执行，
+  // 否则首屏会闪一下全部卡片。
+  document.querySelectorAll('main#main > section[id]').forEach((s) => {
+    if (s.querySelectorAll('.proj-page').length > 1) {
+      s.querySelector('.subpages')?.classList.add('is-paged');
+      s.querySelector('.proj-pager')?.classList.add('is-paged');
+    }
+  });
+
+  // 严格硬切翻页（fullpage 风格）：一次滚动手势 = 精确翻一整屏，像翻 PPT。
+  // 用 JS 而非原生 scroll-snap：原生吸附在 headless/合成层不可测、且不同浏览器
+  // 手感不稳；JS 翻页确定、可测，保证作者要求的“硬切”手感。
+  // 内容高于一屏的 section（如 projects）优先在屏内 .container 滚动，
+  // 滚到底/顶才翻下一屏——既硬切又不丢内容。
+  const reducedFlip = matchMedia('(prefers-reduced-motion: reduce)');
+  // 翻页 slide = 首页 5 个整屏 section + 末尾 footer（普通底部页脚，非整屏）。
+  // footer 必须纳入可到达区域，否则整页被当成「固定 5 屏」永远滚不到它之后，
+  // 导致页脚不可见（2026-08-31 站长反馈）。footer 不占 100dvh、不参与入场动画。
+  const sectionSlides = Array.from(
+    document.querySelectorAll('main#main > section[id]')
+  ) as HTMLElement[];
+  const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
+  const slides = footerEl ? [...sectionSlides, footerEl] : sectionSlides;
+  let idx = 0;
+  let busy = false;
+
+  const topOf = (i: number) => {
+    const el = slides[i] as HTMLElement;
+    // footer 只占自身高度：对齐到其文档流真实顶部，完整露出在视口底部；
+    // 整屏 section 同样使用真实顶部（它们恰为整屏，等价于对齐整屏）。
+    return el.getBoundingClientRect().top + window.scrollY;
+  };
+  const flip = (i: number, smooth: boolean, fromDir = 1) => {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    idx = i;
+    // 进入带子屏的章节：从上进→子屏 0，从下进→末屏（翻页方向感一致）
+    const sec = slides[i] as HTMLElement;
+    const pages = sec.querySelectorAll('.proj-page');
+    if (pages.length > 1) renderSub(sec, fromDir > 0 ? 0 : pages.length - 1, true);
+    busy = true;
+    // 注意：不能写 'auto'——'auto' 会继承 global.css 的 scroll-behavior:smooth，
+    // 导致“硬切”在 reduced-motion 下仍被平滑成半截。明确 'instant' 才是真即时。
+    window.scrollTo({ top: topOf(i), behavior: smooth && !reducedFlip.matches ? 'smooth' : 'instant' });
+    window.setTimeout(() => { busy = false; }, smooth && !reducedFlip.matches ? 700 : 0);
+  };
+  flip(0, false); // 初始对齐首屏
+
+  const step = (dir: number) => {
+    if (busy) return;
+    const sec = slides[idx] as HTMLElement;
+    // ① 子屏翻页优先：当前章节有 .proj-page 且未到边界 → 翻子屏，不翻整章
+    const pages = sec.querySelectorAll('.proj-page');
+    if (pages.length > 1) {
+      const cur = subIdx.get(sec) ?? 0;
+      if (dir > 0 && cur < pages.length - 1) {
+        busy = true;
+        renderSub(sec, cur + 1, true);
+        window.setTimeout(() => { busy = false; }, DUR + 30);
+        return;
+      }
+      if (dir < 0 && cur > 0) {
+        busy = true;
+        renderSub(sec, cur - 1, true);
+        window.setTimeout(() => { busy = false; }, DUR + 30);
+        return;
+      }
+      flip(idx + dir, true, dir); // 到边界才翻整章
+      return;
+    }
+    // ② 无子屏：高章节优先屏内滚动，滚到顶/底才翻整章
+    const inner = sec.querySelector('.container') as HTMLElement | null;
+    if (inner && inner.scrollHeight > inner.clientHeight + 2) {
+      const atTop = inner.scrollTop <= 0;
+      const atBottom = inner.scrollTop + inner.clientHeight >= inner.scrollHeight - 2;
+      if (dir > 0 && !atBottom) { inner.scrollTop += 80 * dir; return; }
+      if (dir < 0 && !atTop) { inner.scrollTop += 80 * dir; return; }
+    }
+    flip(idx + dir, true, dir);
+  };
+
+  window.addEventListener(
+    'wheel',
+    (e: WheelEvent) => {
+      e.preventDefault();
+      if (busy) return;
+      step(e.deltaY > 0 ? 1 : -1);
+    },
+    { passive: false }
+  );
+
+  window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (['ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); step(1); }
+    else if (['ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); step(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); flip(0, true); }
+    else if (e.key === 'End') { e.preventDefault(); flip(slides.length - 1, true); }
+  });
+
+  let touchY = 0;
+  window.addEventListener('touchstart', (e: TouchEvent) => { touchY = e.touches[0].clientY; }, { passive: true });
+  window.addEventListener('touchend', (e: TouchEvent) => {
+    const dy = touchY - (e.changedTouches[0]?.clientY ?? touchY);
+    if (Math.abs(dy) > 40) step(dy > 0 ? 1 : -1);
+  }, { passive: true });
+
+  // 同步 idx（处理导航锚点等原生滚动，使随后的翻页从正确屏继续）
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (busy) return;
+      const mid = window.scrollY + window.innerHeight / 2;
+      let best = 0, bestD = Infinity;
+      slides.forEach((s, i) => {
+        const el = s as HTMLElement;
+        const c = el.getBoundingClientRect().top + window.scrollY + el.offsetHeight / 2;
+        const d = Math.abs(c - mid);
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      idx = best;
+    },
+    { passive: true }
+  );
+
+  if (!('IntersectionObserver' in window)) {
+    revealEls.forEach((el) => el.classList.remove('reveal-card'));
+  } else {
+    // 跟踪每个 section 是否已切入，避免首屏对未进入的 section 误触发切出闪烁
+    const entered = new Set<string>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const sec = e.target as HTMLElement;
+          const id = '#' + sec.id;
+          const p = plan.find((x) => x.sec === id);
+          if (!p) continue;
+          if (e.intersectionRatio >= 0.55) {
+            if (!entered.has(id)) {
+              entered.add(id);
+              enter(sec);
+            }
+          } else if (entered.has(id)) {
+            entered.delete(id);
+            exit(sec);
+          }
+        }
+      },
+      { threshold: [0, 0.25, 0.55, 0.9] }
+    );
+    for (const p of plan) {
+      const sec = document.querySelector(p.sec);
+      if (sec) io.observe(sec);
+    }
+  }
+</script>

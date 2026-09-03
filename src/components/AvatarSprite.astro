@@ -1,0 +1,92 @@
+---
+/**
+ * avatar sprite（像素头像）—— 代码生成的占位像素头像。
+ * 像素数据以字符串网格定义，程序绘制为内联 SVG；
+ * 后续替换为静态图片时，直接换掉此组件即可。
+ */
+
+const PALETTE = {
+  '.': 'transparent',
+  '0': 'var(--gb-0)', // 最深绿
+  '1': 'var(--gb-1)', // 深绿
+  '2': 'var(--gb-2)', // 中绿
+  '3': 'var(--gb-3)', // 浅绿
+} as const;
+
+// 12 x 15 像素网格（面向右前方的占位头像）
+const MAP = [
+  '...000000...',
+  '..03333330..',
+  '.0333333330.',
+  '033333333330',
+  '033333333330',
+  '033003300330',
+  '033003300330',
+  '033333333330',
+  '033333333330',
+  '033333333330',
+  '033333330000',
+  '033333300000',
+  '.0333333330.',
+  '..03333330..',
+  '...000000...',
+];
+
+const W = MAP[0]!.length;
+const H = MAP.length;
+
+interface Props {
+  /** 渲染宽度（px），高度按网格比例 */
+  size?: number;
+  label?: string;
+}
+
+const { size = 96, label = 'pixel avatar sprite' } = Astro.props;
+---
+
+<figure class="avatar">
+  <svg
+    viewBox={`0 0 ${W} ${H}`}
+    width={size}
+    height={Math.round((size * H) / W)}
+    role="img"
+    aria-label={label}
+    shape-rendering="crispEdges"
+  >
+    {
+      MAP.map((row, y) =>
+        [...row].map((cell, x) =>
+          cell === '.' ? null : (
+            <rect x={x} y={y} width={1} height={1} fill={PALETTE[cell as keyof typeof PALETTE]} />
+          )
+        )
+      )
+    }
+  </svg>
+  <figcaption class="text-pixel caption">avatar sprite v1</figcaption>
+</figure>
+
+<style>
+  .avatar {
+    margin: 0;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  svg {
+    border: 4px solid var(--gb-2);
+    background-color: var(--gb-0);
+    box-shadow:
+      4px 4px 0 color-mix(in srgb, var(--gb-1) 80%, transparent),
+      8px 8px 0 color-mix(in srgb, var(--gb-1) 55%, transparent); /* 4/8 两阶 chip 阴影（对齐 4px 步进） */
+    image-rendering: pixelated;
+  }
+
+  .caption {
+    font-size: 0.55rem;
+    color: var(--color-text-dim);
+    letter-spacing: 0.1em;
+  }
+</style>
