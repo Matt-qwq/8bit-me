@@ -5,7 +5,7 @@ import { deterministicFreePortFrom } from './scripts/astro-port.mjs';
  * e2e 冒烟（方案：docs/specs/automated-testing-v1.md）
  * - 测试对象 = dist 产物（npm run preview），最贴近上线物
  * - channel: 'chrome' = 复用系统 Chrome，免下载浏览器（本机路径已确认存在）
- * - 端口 4322 起自动后移（避开站主常在跑的 dev server 与 Windows 排除端口段，
+ * - 端口 4322 起自动后移（避开作者常在跑的 dev server 与 Windows 排除端口段，
  *   见 scripts/astro-port.mjs —— 4321/4322 曾落在 Hyper-V 保留段导致 EACCES 硬崩）
  * - `npm test` = `npm run build && playwright test`（build 前置复用现有门禁）
  */

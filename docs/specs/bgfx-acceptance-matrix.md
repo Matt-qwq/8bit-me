@@ -55,5 +55,5 @@
 
 ## 判定
 
-- 全绿 → commit 已可交付（v5 已入库）→ 作者拍板部署（`bash scripts/deploy-netlify.sh`，15 credits/次）
+- 全绿 → commit 已可交付（v5 已入库）→ 作者拍板部署（`bash scripts/部署脚本`，15 credits/次）
 - 有格不满意 → 说「场景 × 症状」，多数只调 `bgfx-motion.ts` / `BgFx.astro` 的常数（信号频率/磷光衰减/亮度阈值）
