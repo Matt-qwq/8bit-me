@@ -1,0 +1,11 @@
+# 统一 LF 行尾：公开仓交付物在 git 索引与检出均为 LF
+* text=auto eol=lf
+
+# 二进制资源
+*.woff2 binary
+*.ttf binary
+*.gif binary
+*.ico binary
+*.png binary
+*.jpg binary
+*.webp binary
