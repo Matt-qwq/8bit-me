@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>:root{--c-bg:#0b102c;--c-panel:#202a5e;--c-line:#39437a;--c-accent:#ffd27a;--c-text:#e8ecf5;}</style><style>@font-face{font-family:'Zpix';font-style:normal;font-weight:400;font-display:block;src:url('/8bit-me/fonts/zpix.subset.woff2') format('woff2'),url('/8bit-me/fonts/zpix.ttf') format('truetype');}</style><link rel="icon" type="image/svg+xml" href="/8bit-me/favicon.svg"><link rel="icon" href="/8bit-me/favicon.ico"><link rel="preload" as="font" type="font/woff2" href="/8bit-me/fonts/zpix.subset.woff2" crossorigin="anonymous"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="Astro v7.2.7"><title>数据可信从哪来：分层数仓只增不改、脏行只标不丢 | 8bit-me</title><meta name="description" content="让报表可信，靠的不是洗得干净，而是变更可追溯、脏行只标不丢。独立源库不预判类型、先删后插保幂等，ODS 只增不改，DWD 用 TRY_CAST 与 _row_valid 点名脏行，每一行都能交代来历。"><link rel="canonical" href="https://matt-qwq.github.io/8bit-me/blog/2026-09-04-immutable-data-warehouse/"><meta property="og:title" content="数据可信从哪来：分层数仓只增不改、脏行只标不丢 | 8bit-me"><meta property="og:description" content="让报表可信，靠的不是洗得干净，而是变更可追溯、脏行只标不丢。独立源库不预判类型、先删后插保幂等，ODS 只增不改，DWD 用 TRY_CAST 与 _row_valid 点名脏行，每一行都能交代来历。"><meta property="og:type" content="website"><meta property="og:site_name" content="8bit-me"><meta property="og:url" content="https://matt-qwq.github.io/8bit-me/blog/2026-09-04-immutable-data-warehouse/"><link rel="stylesheet" href="/8bit-me/_astro/BaseLayout.q51SGnQ2.css"><style>.cover-art[data-astro-cid-dgzmdkyj]{flex:1 1 0;width:100%;height:100%;min-height:0;display:block}.cover-art[data-astro-cid-dgzmdkyj] .ink-accent[data-astro-cid-dgzmdkyj]{fill:var(--c-accent)}.cover-art[data-astro-cid-dgzmdkyj] .ink-light[data-astro-cid-dgzmdkyj]{fill:var(--c-text)}.cover-art[data-astro-cid-dgzmdkyj] .ink-dark[data-astro-cid-dgzmdkyj]{fill:var(--c-line)}
+.post[data-astro-cid-zg7dkzxc]{padding-top:2rem}.back[data-astro-cid-zg7dkzxc]{letter-spacing:var(--ls-12);color:var(--color-text-dim);font-size:.75rem;line-height:16px}.back[data-astro-cid-zg7dkzxc]:hover{color:var(--c-text)}.head[data-astro-cid-zg7dkzxc]{align-items:flex-start;gap:1.25rem;margin:1.5rem 0 2.5rem;display:flex}.head-main[data-astro-cid-zg7dkzxc]{flex:1;min-width:0}.head[data-astro-cid-zg7dkzxc] h1[data-astro-cid-zg7dkzxc]{letter-spacing:var(--ls-20);font-size:1.25rem;line-height:28px}@media (width<=560px){.head[data-astro-cid-zg7dkzxc]{gap:.9rem}}.meta[data-astro-cid-zg7dkzxc]{font-family:var(--font-mono);letter-spacing:normal;color:var(--color-text-dim);flex-wrap:wrap;align-items:center;gap:.6rem;font-size:.75rem;line-height:16px;display:flex}.meta[data-astro-cid-zg7dkzxc] .sep[data-astro-cid-zg7dkzxc]{color:var(--c-line)}.prose[data-astro-cid-zg7dkzxc] h2{letter-spacing:var(--ls-18);margin-block:2rem .75rem;font-size:1.125rem;line-height:24px}.prose[data-astro-cid-zg7dkzxc] h3{letter-spacing:var(--ls-16);margin:1.5rem 0 .5rem;font-size:1rem;font-weight:700;line-height:24px}.prose[data-astro-cid-zg7dkzxc] p{color:var(--color-text)}.prose[data-astro-cid-zg7dkzxc] strong{font-weight:700}.prose[data-astro-cid-zg7dkzxc] li+li{margin-top:.5em}.prose[data-astro-cid-zg7dkzxc] code{font-family:var(--font-mono);letter-spacing:normal;background-color:color-mix(in srgb, var(--c-line) 40%, var(--c-bg));padding:.1em .35em;font-size:.875em}.prose[data-astro-cid-zg7dkzxc] pre{border:1px solid var(--c-line);background-color:color-mix(in srgb, var(--c-line) 35%, var(--c-bg));padding:1rem;overflow-x:auto}.prose[data-astro-cid-zg7dkzxc] pre code{letter-spacing:normal;background:0 0;padding:0;font-size:.875rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] pre:has(>code.language-flow){font-family:var(--font-pixel);letter-spacing:var(--ls-12);color:var(--c-text);background-color:color-mix(in srgb, var(--c-line) 25%, var(--c-bg));font-size:.75rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] pre:has(>code.language-flow)>code{font-family:var(--font-pixel);letter-spacing:var(--ls-12);font-size:.75rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] blockquote{border-left:2px solid var(--c-accent);color:var(--color-text-dim);margin:1rem 0;padding-left:1rem}.prose[data-astro-cid-zg7dkzxc] ul,.prose[data-astro-cid-zg7dkzxc] ol{padding-inline-start:1.5rem}.prose[data-astro-cid-zg7dkzxc] hr{border:none;border-top:1px solid var(--c-line);width:6rem;margin:2rem auto}
+</style></head><body><div class="bgfx-canvas" aria-hidden="true" data-astro-cid-64axyb7o><canvas id="bgfx-canvas" data-astro-cid-64axyb7o></canvas></div><div class="bgfx-scrim" aria-hidden="true" data-astro-cid-64axyb7o></div><script type="module" src="/8bit-me/_astro/BgFx.astro_astro_type_script_index_0_lang.aSZ2FqPz.js"></script><header class="nav" data-astro-cid-wpvy4v7s><div class="nav-inner container" data-astro-cid-wpvy4v7s><a class="logo text-pixel" href="#main" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>8bit<span class="dot" data-astro-cid-wpvy4v7s>.</span>me</a><nav aria-label="主导航" data-astro-cid-wpvy4v7s><ul data-astro-cid-wpvy4v7s><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#hero" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>首页</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#about" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>关于</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#projects" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>作品</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#skills" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>技能</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#contact" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>联系</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/blog" class="is-active" aria-current="page" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>博客</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/lab" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>实验场</a></li></ul></nav><!-- 丝印层吉祥物：坐在板边打瞌睡的睡猫（GIF 呼吸动画，2026-08-31 由 pose1 睡姿素材抠透明）。
+         刻意不用 <a> 包裹：nav-links.spec.ts 有「全站 a[href^="#"] 目标必须存在」的硬契约，
+         装饰元素包成锚点会在 /blog、/404 上炸掉。纯装饰 → alt='' 且不进 tab 序。 --><span class="nav-cat" aria-hidden="true" data-astro-cid-wpvy4v7s><img class="nav-cat__img" src="/8bit-me/cats/nav_sleep.gif" alt="" data-astro-cid-wpvy4v7s></span></div></header><script type="module">var e=document.querySelectorAll(`main section[id]`);if(e.length>0){let t=Array.from(document.querySelectorAll(`.nav a[href*="#"]`));new Map(Array.from(e).map(e=>[`#${e.id}`,e]));let n=new IntersectionObserver(e=>{let n=null;for(let t of e)t.isIntersecting&&(n=`#${t.target.id}`);n&&t.forEach(e=>e.classList.toggle(`is-active`,e.hash===n))},{rootMargin:`-40% 0px -55% 0px`});e.forEach(e=>n.observe(e))}</script><main id="main"><article class="container container--prose post" data-astro-cid-zg7dkzxc><p data-astro-cid-zg7dkzxc><a class="back text-pixel" href="/8bit-me/blog" data-sfx-role="nav" data-astro-cid-zg7dkzxc>← BACK</a></p><header class="head" data-astro-cid-zg7dkzxc><span class="cover-block lg" aria-hidden="true" data-astro-cid-dgzmdkyj><svg class="cover-art" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false" data-astro-cid-dgzmdkyj><path class="ink-accent" d="M7 6h1v1h-1zM8 6h1v1h-1z" data-astro-cid-dgzmdkyj></path><path class="ink-light" d="M4 1h1v1h-1zM5 1h1v1h-1zM6 1h1v1h-1zM7 1h1v1h-1zM8 1h1v1h-1zM9 1h1v1h-1zM10 1h1v1h-1zM11 1h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM11 2h1v1h-1zM12 2h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM5 3h1v1h-1zM6 3h1v1h-1zM7 3h1v1h-1zM8 3h1v1h-1zM9 3h1v1h-1zM10 3h1v1h-1zM11 3h1v1h-1zM12 3h1v1h-1zM3 4h1v1h-1zM12 4h1v1h-1zM3 5h1v1h-1zM4 5h1v1h-1zM5 5h1v1h-1zM6 5h1v1h-1zM7 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM3 6h1v1h-1zM12 6h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM5 7h1v1h-1zM6 7h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1zM9 7h1v1h-1zM10 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM3 8h1v1h-1zM12 8h1v1h-1zM3 9h1v1h-1zM4 9h1v1h-1zM5 9h1v1h-1zM6 9h1v1h-1zM7 9h1v1h-1zM8 9h1v1h-1zM9 9h1v1h-1zM10 9h1v1h-1zM11 9h1v1h-1zM12 9h1v1h-1zM4 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM9 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM3 15h1v1h-1zM4 15h1v1h-1zM6 15h1v1h-1zM7 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1z" data-astro-cid-dgzmdkyj></path></svg></span><div class="head-main" data-astro-cid-zg7dkzxc><h1 data-astro-cid-zg7dkzxc>数据可信从哪来：分层数仓只增不改、脏行只标不丢</h1><p class="meta" data-astro-cid-zg7dkzxc><time datetime="2026-09-04T00:00:00.000Z" data-astro-cid-zg7dkzxc>2026-09-04</time><span class="sep" data-astro-cid-zg7dkzxc>·</span><span data-astro-cid-zg7dkzxc><span class="tag text-pixel" data-astro-cid-zg7dkzxc>Python</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>数据管道</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>数仓</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>方法论</span></span></p></div></header><div class="prose pixel-panel" data-astro-cid-zg7dkzxc><div class="prose-body" data-astro-cid-zg7dkzxc><p>数据要拿去算投放回报，先得能回答一句：这张表里哪一行可信？答不上来，报表就只是格式好看的猜测。</p>
+<p>若清洗时把脏行悄悄丢掉，答案就是「我不知道它脏过」。同一主键反复入库，答案就是「说不清以哪个版本为准」。</p>
+<p>让答案成立，靠的不是洗得更干净，而是两条存储纪律：只增不改，宁加标记不丢行。本篇分 7 节：先立问题，再用 4 节拆源库到上层的存储链路。接着看跑批的进度表，最后收成方法论并划清边界。</p>
+<p>存储链路自下而上五层，每条纪律都挂在对应那一层上：</p>
+<pre><code class="language-flow">分层数据流 · 自下而上
+
+报表 REPORT
+　只读 _row_valid 标过的行
+　↑ 纪律：可信的才进报表
+
+上层 DWS / DIM / META
+　DWS 汇总 · DIM 维度 · META 血缘
+　↑ 纪律：三路各有各的账
+
+DWD 明细层
+　TRY_CAST 转换 · 校验原文再入库
+　↑ 纪律：脏行只标不丢
+
+ODS 当日快照
+　同一天重跑 = 整体替换分区
+　↑ 纪律：只增不改
+
+源库 SOURCE
+　VARCHAR 保真 · 同主键先删后插
+　↑ 纪律：重跑幂等
+</code></pre>
+<h2 id="一可信问题从哪来">一、可信问题从哪来</h2>
+<p>把原始数据搬回本地，最顺手的第一步是边清洗边入库，只留「干净」的行。这样做的代价，是原始模样当场被覆盖，事后一切口径之争都死无对证。</p>
+<p>口径还会自己漂移。这周的定义，下周就可能不同；真想改口径，历史却已经洗过、改不回来。</p>
+<p>比口径更隐蔽的，是脏行被悄悄丢掉。查询结果看起来正常，其实早就漏了数据，谁也没有收到警报。错误不可见，才是数据可信的头号敌人。</p>
+<p>所以正确的姿势，不是消灭脏数据，而是管理它的去向。只增不改，让每一次变更都留痕；宁加标记不丢行，让每一处可疑都被点名。这条账要怎么记，先落到最靠近源头的那一层。</p>
+<h2 id="二源库先保真再幂等">二、源库：先保真，再幂等</h2>
+<p>分层的第一段是独立源库，职责只有一个：原样保存。平台给什么字段，就原样收什么字段，不做任何取舍。</p>
+<p>原样的实现，是把字段统一声明为 <code>VARCHAR</code>（变长字符串类型），一律按文本存储。不预判类型，是因为预判本身就是一次解释；解释错了，数据在入口就变形。</p>
+<p>类型判断要等真正计算时再做，那时可以按需转换，而不是入库时就替数据赌一把。源字段往往不齐整，按文本收下既不崩也不丢。</p>
+<p>源库的另一条纪律，是重跑不改结果。行话叫幂等（idempotent，重复执行结果一致）。实现只靠一句：同主键先删后插。写入前先删掉同主键的旧行，再整批插入，任何时刻都只有完整的一版。</p>
+<h2 id="三ods只增不改">三、ODS：只增不改</h2>
+<p>源库到查询之间，隔着一步 ETL（抽取-转换-加载）。它把当天数据抽取出来，做必要的转换，再整体加载进下一层。</p>
+<p>下一层是 ODS（操作数据存储），存操作数据的当日快照。ODS 的纪律是<strong>只增不改</strong>：新数据只追加成新的一天，历史日期原封不动。</p>
+<p>同一天的批次要重跑，就整体替换当天分区，不逐行修补。逐行修补会留下半新半旧的中间态，而且修补过程没法重放。整体替换让重跑变成原子动作：要么整版是新的，要么整版是旧的，不存在第三态。</p>
+<p>到这里，数据有了一份可随时整版重放的底稿。下一步才真正动手加工，脏数据也从这一层开始现形。</p>
+<h2 id="四dwd宁加标记不丢行">四、DWD：宁加标记，不丢行</h2>
+<p>DWD（明细数据层）承担类型与口径的转换，是脏数据正式现形的地方。转换优先用 TRY_CAST（尝试型类型转换）：转不动的返回空值，而不是中断整批任务。</p>
+<p>空值不是终点，怎么被看见才是关键。每行加工完都会盖一个质量章：<code>_row_valid</code> 字段记录这一行有没有通过校验。校验不过的行照常入库，只是标记如实写明「未通过」。</p>
+<p><code>_row_valid</code> 的判定依据是原文预校验，不是转换结果是否为空。先校验原文格式，再执行 TRY_CAST，两者配合，合法空值才与坏值分得开。</p>
+<p>为什么不把脏行直接丢掉？丢行等于销毁证据，问题行连被发现的资格都没有，错误从此不可见。标记则让脏数据<strong>进得去、查得出来</strong>：分析时能整体排除，排查时能照标记捞回。</p>
+<p>脏行从一次事故降级成一行备注，这是 DWD 最值钱的设计。它能回答下游最常问的问题：这一行为什么长这样？因为它是脏的，而证据还在。</p>
+<h2 id="五上层汇总维度与血缘">五、上层：汇总、维度与血缘</h2>
+<p>明细再往上，数据开始服务查询，职责分成三路。</p>
+<ul>
+<li>DWS（汇总数据层）：预计算常用聚合，报表免扫明细。</li>
+<li>DIM（维度层）：公共口径只定义一次，处处引用。</li>
+<li>META（血缘与质量日志）：记录每批数据的来源、去向与质量结论。</li>
+</ul>
+<p>三路各有各的账：DWS 管算得快，DIM 管说得清，META 管查得着。四段存储各司其职：源库存原样，ODS 存当日。DWD 定标准口径，上层专供查询与追溯。</p>
+<p>层的职责清楚了，跑批的账还没记。任务中断、批次重跑，靠什么恢复到正确的位置？</p>
+<h2 id="六进度表断点续传的地基">六、进度表：断点续传的地基</h2>
+<p>答案是进度表，为每个批次记一行状态。状态机只有四态：待办、进行中、完成与失败。流转只朝一个方向走，失败不靠改写历史，而是回到待办重新来过。</p>
+<p>它定位为 ETL 跑批的断点续传基建，属取数链路，不是调度系统。任务中断后重启，先查表，再决定从哪个批次接着跑。跑到哪、卡在哪，也由此可查，不必整链重跑。</p>
+<p>进度表和数仓共享同一种精神：状态变更必须留痕。哪个批次失败过、失败过几次，都成为可查的记录，而不是只活在进程里。跑批这个环节，由此也变成可追溯的数据。体系内的跑批与报表，则复用同一套纪律，细节不展开。</p>
+<h2 id="七可信来自可追溯">七、可信来自可追溯</h2>
+<p>这套设计共用一套纪律，因为它们面对的是同一个敌人：不可见。只增不改守住可追溯，质量标记守住可见性，其余机制都是这两条的延伸。</p>
+<p>把整套设计压成一句：可信来自可追溯，风险来自不可见。判断一条记录能不能信，就看它能不能交代来历。分层、质量标记与状态机，都只是这句话的落点。</p>
+<p>这套纪律的适用边界，也应当讲明。它适合能掌控全链路的工具型数仓。数据量大到逐行标记存不动时，需要分区裁剪之类的更重机制，那是另一个量级的课题。</p>
+<p>回到开篇那个问题：哪一行可信？现在回答有了路径：查 META 问来历，看 <code>_row_valid</code> 问真伪。能交代每一行来历的数仓，报表才敢放心采信。宁加标记，不丢一行——只增不改的账本，立的就是这份底气。</p>
+</div></div></article></main><footer class="footer" data-astro-cid-jo6i4kqk><div class="container" data-astro-cid-jo6i4kqk><p class="text-pixel foot-line" data-astro-cid-jo6i4kqk>© 2026 Matt · built with Astro</p><p class="foot-credit" data-astro-cid-jo6i4kqk>中文像素字体 <a href="https://github.com/SolidZORO/zpix-pixel-font" target="_blank" rel="noopener" data-sfx-role="click" data-astro-cid-jo6i4kqk>Zpix</a> by SolidZORO</p></div><!-- 猫（截图脚本/过往草稿）已从 footer 移除：2026-08-31 决定只在 Nav 放一只睡猫，底部不再放猫。 --></footer><script type="module" src="/8bit-me/_astro/SideDock.astro_astro_type_script_index_0_lang.BeDAQIdz.js"></script><script type="module" src="/8bit-me/_astro/Konami.astro_astro_type_script_index_0_lang.RDt3UWSo.js"></script><canvas id="cursorfx-canvas" aria-hidden="true" data-astro-cid-crcialzl></canvas><script type="module" src="/8bit-me/_astro/CursorFx.astro_astro_type_script_index_0_lang.BPOf4GIn.js"></script><div id="ptrans-host" class="ptrans-host" aria-hidden="true"></div><script type="module" src="/8bit-me/_astro/PageTrans.astro_astro_type_script_index_0_lang.DQ4iUEqz.js"></script><!-- is:global：幕帘元素均在运行时 createElement 生成（无 data-astro-cid），
+     带 scope 的规则会全部失配导致转场不可见（曾踩坑） --><script type="module" src="/8bit-me/_astro/SfxRoles.astro_astro_type_script_index_0_lang.CU4lzNGI.js"></script></body></html>

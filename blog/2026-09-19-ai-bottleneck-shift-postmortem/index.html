@@ -1,0 +1,103 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>:root{--c-bg:#0b102c;--c-panel:#202a5e;--c-line:#39437a;--c-accent:#ffd27a;--c-text:#e8ecf5;}</style><style>@font-face{font-family:'Zpix';font-style:normal;font-weight:400;font-display:block;src:url('/8bit-me/fonts/zpix.subset.woff2') format('woff2'),url('/8bit-me/fonts/zpix.ttf') format('truetype');}</style><link rel="icon" type="image/svg+xml" href="/8bit-me/favicon.svg"><link rel="icon" href="/8bit-me/favicon.ico"><link rel="preload" as="font" type="font/woff2" href="/8bit-me/fonts/zpix.subset.woff2" crossorigin="anonymous"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="Astro v7.2.7"><title>AI 挪走瓶颈，不消灭瓶颈：一次全绿的失败复盘 | 8bit-me</title><meta name="description" content="一个 2D 雪原生存游戏：机制全部交付、两百多个测试脚本全绿、七十多条陷阱台账每条都有事故背书，而我第一次把它拿给人看，得到的评价是「没有一个认的出来」。这篇复盘的是那堵被 AI 推倒的墙，和墙后面那堵它推不动的墙——以及怎么在第一天就看出它推不动。"><link rel="canonical" href="https://matt-qwq.github.io/8bit-me/blog/2026-09-19-ai-bottleneck-shift-postmortem/"><meta property="og:title" content="AI 挪走瓶颈，不消灭瓶颈：一次全绿的失败复盘 | 8bit-me"><meta property="og:description" content="一个 2D 雪原生存游戏：机制全部交付、两百多个测试脚本全绿、七十多条陷阱台账每条都有事故背书，而我第一次把它拿给人看，得到的评价是「没有一个认的出来」。这篇复盘的是那堵被 AI 推倒的墙，和墙后面那堵它推不动的墙——以及怎么在第一天就看出它推不动。"><meta property="og:type" content="website"><meta property="og:site_name" content="8bit-me"><meta property="og:url" content="https://matt-qwq.github.io/8bit-me/blog/2026-09-19-ai-bottleneck-shift-postmortem/"><link rel="stylesheet" href="/8bit-me/_astro/BaseLayout.q51SGnQ2.css"><style>.cover-art[data-astro-cid-dgzmdkyj]{flex:1 1 0;width:100%;height:100%;min-height:0;display:block}.cover-art[data-astro-cid-dgzmdkyj] .ink-accent[data-astro-cid-dgzmdkyj]{fill:var(--c-accent)}.cover-art[data-astro-cid-dgzmdkyj] .ink-light[data-astro-cid-dgzmdkyj]{fill:var(--c-text)}.cover-art[data-astro-cid-dgzmdkyj] .ink-dark[data-astro-cid-dgzmdkyj]{fill:var(--c-line)}
+.post[data-astro-cid-zg7dkzxc]{padding-top:2rem}.back[data-astro-cid-zg7dkzxc]{letter-spacing:var(--ls-12);color:var(--color-text-dim);font-size:.75rem;line-height:16px}.back[data-astro-cid-zg7dkzxc]:hover{color:var(--c-text)}.head[data-astro-cid-zg7dkzxc]{align-items:flex-start;gap:1.25rem;margin:1.5rem 0 2.5rem;display:flex}.head-main[data-astro-cid-zg7dkzxc]{flex:1;min-width:0}.head[data-astro-cid-zg7dkzxc] h1[data-astro-cid-zg7dkzxc]{letter-spacing:var(--ls-20);font-size:1.25rem;line-height:28px}@media (width<=560px){.head[data-astro-cid-zg7dkzxc]{gap:.9rem}}.meta[data-astro-cid-zg7dkzxc]{font-family:var(--font-mono);letter-spacing:normal;color:var(--color-text-dim);flex-wrap:wrap;align-items:center;gap:.6rem;font-size:.75rem;line-height:16px;display:flex}.meta[data-astro-cid-zg7dkzxc] .sep[data-astro-cid-zg7dkzxc]{color:var(--c-line)}.prose[data-astro-cid-zg7dkzxc] h2{letter-spacing:var(--ls-18);margin-block:2rem .75rem;font-size:1.125rem;line-height:24px}.prose[data-astro-cid-zg7dkzxc] h3{letter-spacing:var(--ls-16);margin:1.5rem 0 .5rem;font-size:1rem;font-weight:700;line-height:24px}.prose[data-astro-cid-zg7dkzxc] p{color:var(--color-text)}.prose[data-astro-cid-zg7dkzxc] strong{font-weight:700}.prose[data-astro-cid-zg7dkzxc] li+li{margin-top:.5em}.prose[data-astro-cid-zg7dkzxc] code{font-family:var(--font-mono);letter-spacing:normal;background-color:color-mix(in srgb, var(--c-line) 40%, var(--c-bg));padding:.1em .35em;font-size:.875em}.prose[data-astro-cid-zg7dkzxc] pre{border:1px solid var(--c-line);background-color:color-mix(in srgb, var(--c-line) 35%, var(--c-bg));padding:1rem;overflow-x:auto}.prose[data-astro-cid-zg7dkzxc] pre code{letter-spacing:normal;background:0 0;padding:0;font-size:.875rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] pre:has(>code.language-flow){font-family:var(--font-pixel);letter-spacing:var(--ls-12);color:var(--c-text);background-color:color-mix(in srgb, var(--c-line) 25%, var(--c-bg));font-size:.75rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] pre:has(>code.language-flow)>code{font-family:var(--font-pixel);letter-spacing:var(--ls-12);font-size:.75rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] blockquote{border-left:2px solid var(--c-accent);color:var(--color-text-dim);margin:1rem 0;padding-left:1rem}.prose[data-astro-cid-zg7dkzxc] ul,.prose[data-astro-cid-zg7dkzxc] ol{padding-inline-start:1.5rem}.prose[data-astro-cid-zg7dkzxc] hr{border:none;border-top:1px solid var(--c-line);width:6rem;margin:2rem auto}
+</style></head><body><div class="bgfx-canvas" aria-hidden="true" data-astro-cid-64axyb7o><canvas id="bgfx-canvas" data-astro-cid-64axyb7o></canvas></div><div class="bgfx-scrim" aria-hidden="true" data-astro-cid-64axyb7o></div><script type="module" src="/8bit-me/_astro/BgFx.astro_astro_type_script_index_0_lang.aSZ2FqPz.js"></script><header class="nav" data-astro-cid-wpvy4v7s><div class="nav-inner container" data-astro-cid-wpvy4v7s><a class="logo text-pixel" href="#main" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>8bit<span class="dot" data-astro-cid-wpvy4v7s>.</span>me</a><nav aria-label="主导航" data-astro-cid-wpvy4v7s><ul data-astro-cid-wpvy4v7s><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#hero" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>首页</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#about" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>关于</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#projects" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>作品</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#skills" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>技能</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#contact" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>联系</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/blog" class="is-active" aria-current="page" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>博客</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/lab" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>实验场</a></li></ul></nav><!-- 丝印层吉祥物：坐在板边打瞌睡的睡猫（GIF 呼吸动画，2026-08-31 由 pose1 睡姿素材抠透明）。
+         刻意不用 <a> 包裹：nav-links.spec.ts 有「全站 a[href^="#"] 目标必须存在」的硬契约，
+         装饰元素包成锚点会在 /blog、/404 上炸掉。纯装饰 → alt='' 且不进 tab 序。 --><span class="nav-cat" aria-hidden="true" data-astro-cid-wpvy4v7s><img class="nav-cat__img" src="/8bit-me/cats/nav_sleep.gif" alt="" data-astro-cid-wpvy4v7s></span></div></header><script type="module">var e=document.querySelectorAll(`main section[id]`);if(e.length>0){let t=Array.from(document.querySelectorAll(`.nav a[href*="#"]`));new Map(Array.from(e).map(e=>[`#${e.id}`,e]));let n=new IntersectionObserver(e=>{let n=null;for(let t of e)t.isIntersecting&&(n=`#${t.target.id}`);n&&t.forEach(e=>e.classList.toggle(`is-active`,e.hash===n))},{rootMargin:`-40% 0px -55% 0px`});e.forEach(e=>n.observe(e))}</script><main id="main"><article class="container container--prose post" data-astro-cid-zg7dkzxc><p data-astro-cid-zg7dkzxc><a class="back text-pixel" href="/8bit-me/blog" data-sfx-role="nav" data-astro-cid-zg7dkzxc>← BACK</a></p><header class="head" data-astro-cid-zg7dkzxc><span class="cover-block lg" aria-hidden="true" data-astro-cid-dgzmdkyj><svg class="cover-art" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false" data-astro-cid-dgzmdkyj><path class="ink-accent" d="M7 4h1v1h-1zM8 4h1v1h-1zM7 5h1v1h-1zM8 5h1v1h-1z" data-astro-cid-dgzmdkyj></path><path class="ink-light" d="M7 1h1v1h-1zM8 1h1v1h-1zM6 2h1v1h-1zM7 2h1v1h-1zM8 2h1v1h-1zM9 2h1v1h-1zM5 3h1v1h-1zM6 3h1v1h-1zM9 3h1v1h-1zM10 3h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM9 4h1v1h-1zM10 4h1v1h-1zM4 5h1v1h-1zM5 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM10 6h1v1h-1zM11 6h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM11 8h1v1h-1zM12 8h1v1h-1zM2 9h1v1h-1zM3 9h1v1h-1zM12 9h1v1h-1zM13 9h1v1h-1zM1 10h1v1h-1zM2 10h1v1h-1zM13 10h1v1h-1zM14 10h1v1h-1zM1 11h1v1h-1zM2 11h1v1h-1zM13 11h1v1h-1zM14 11h1v1h-1zM3 15h1v1h-1zM4 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1z" data-astro-cid-dgzmdkyj></path></svg></span><div class="head-main" data-astro-cid-zg7dkzxc><h1 data-astro-cid-zg7dkzxc>AI 挪走瓶颈，不消灭瓶颈：一次全绿的失败复盘</h1><p class="meta" data-astro-cid-zg7dkzxc><time datetime="2026-09-19T00:00:00.000Z" data-astro-cid-zg7dkzxc>2026-09-19</time><span class="sep" data-astro-cid-zg7dkzxc>·</span><span data-astro-cid-zg7dkzxc><span class="tag text-pixel" data-astro-cid-zg7dkzxc>AI</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>工程纪律</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>方法论</span></span></p></div></header><div class="prose pixel-panel" data-astro-cid-zg7dkzxc><div class="prose-body" data-astro-cid-zg7dkzxc><p>「机制全绿，产品不成立。」这是我做完一个 2D 俯视雪原生存游戏之后，唯一一句还站得住的总结。</p>
+<p>游戏能跑、能玩，两百多个测试脚本全绿，七十多条陷阱台账每条都有事故背书。然后我把它拿给人看，第一次得到的评价是六个字：「没有一个认的出来」。</p>
+<p>那一下我才想明白：这几个月 AI 做的事不是解决问题，而是<strong>把问题挪到了下一个地方</strong>。它推倒的是「能不能做出来」，墙后面还站着一堵「好不好」。</p>
+<p>这篇分六段：先说被推倒的那堵墙，和墙后面那堵。再说为什么全绿的测试没能拦住它。然后是两条我用最贵的方式换来的纪律：文档只写指针不写副本、AI 的每句结论都要能指出来源。最后给一份开工清单。</p>
+<h2 id="一一句话教训ai-挪走瓶颈">一、一句话教训：AI 挪走瓶颈</h2>
+<pre><code class="language-flow">第一堵墙　能不能做出来
+　AI 推得动：有断言可依
+　↓
+第二堵墙　好不好
+　AI 推不动：没有机械判据
+　↓
+撞上第二堵墙时，已经盖了十层
+</code></pre>
+<p>AI 的强弱有一条清楚的分界：<strong>可验证的层它很强，没有机械判据的层它很弱</strong>。系统、工具、流程、数据都有断言可依，错了会红；氛围、手感、视觉、叙事没有断言，对错只能由人看。</p>
+<p>而生存游戏卖的恰恰是氛围。这个项目自己的核心设计逐字写着：「冷 = 褪色。暖 = 世界上唯一的颜色」。美术在这一层不是外包装，它同时是机制（体温状态读数）与命题（情感）。</p>
+<p>所以「换成低美术风格就行」不是解法，那等于把要卖的东西删掉，再宣布问题解决了。对生存游戏提这个，跟指着一个红点说「这是一团火，很温暖」没有区别。</p>
+<h2 id="二测试全绿产品不成立">二、测试全绿，产品不成立</h2>
+<p>这个项目的工程纪律，我至今认为做对了：六步验证环、陷阱台账七十多条且编号是承重 ID、新测试必须先红一次。最后一条尤其值钱——<strong>不先失败一次，你分不清「通过」和「根本没跑」</strong>。</p>
+<p>但它全绿的时候，游戏看起来像贴纸。</p>
+<p>原因是那台验证机器保护错了对象：它保护了实现，没保护体验。<strong>测试只能验证你说得清楚的东西，而价值往往在你说不清的那部分里</strong>。于是出现最坏的局面——验证机器全绿，产品不成立。等于把保险买在了没人偷的房间。</p>
+<p>最能说明问题的是 32px 资产迁移那批：色数、alpha、轮廓宽度、安全边距、剪影 IoU 0.99，所有守卫全绿。而图确实变糟了。事后回看，那条 IoU 甚至是<strong>归一化之前</strong>量的。</p>
+<p>后来我给自己立了一条判据：<strong>加一层验证之前，先问它在保护哪一层</strong>。答不出「这一层如果坏了，谁会疼」，就别加。</p>
+<h2 id="三第一次看到真东西太晚了">三、第一次看到真东西，太晚了</h2>
+<p>项目做了十批美术资产，中间还有一次把 26 张资产按 32px 全量重画。我第一次听到「认不出来」，是在那之后的人工验收里。</p>
+<p>更贵的是一个观看方式的错误：那几天我们一直在看<strong>放大八倍的单张精灵</strong>。32×32 放大八倍，和世界上任何像素画比都是丑的；而游戏真正呈现的是 640×360 的原始尺寸。有个反例我记到现在——<strong>落地影在八倍图下看得见，在原始全帧里几乎看不见</strong>。</p>
+<p>所以那条最便宜的动作是：<strong>第一天就做最丑的探针</strong>。一张 32×32 的核心资产（这个项目里是狼），拿给人看，只问一句「这是狼吗」。第一小时做这件事，一小时就能定方向；第十批美术之后再做，代价是几个月。</p>
+<p>瓶颈是可预测的，而预测的代价是一天。这个项目不是失败在「AI 不会画画」——那件事可以提前一天测出来。它失败在没人提前问那个问题，于是一层层往上盖。</p>
+<h2 id="四文档是线索不是证据">四、文档是线索，不是证据</h2>
+<p>这个项目对代码的纪律极严，对文档的纪律是零。而这两种错的性质完全不同：</p>
+<pre><code class="language-flow">代码写错
+　↓
+验证环红，于是被发现
+文档写错
+　↓
+什么都不发生，于是被当成事实
+</code></pre>
+<p><strong>文档的错误是静默的</strong>，这就是全部机制。而且危险程度正比于权威感。含糊的文档没人信，无害；一份带 <code>file:line</code>、语气确定、写得很细的文档没人会去验，那才致命。</p>
+<p>事后清账，五条错误全都长这样：</p>
+<table>
+<thead>
+<tr>
+<th>文档说</th>
+<th>实际</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>「目标是客户端岗社招作品集」</td>
+<td>没有出处、没有日期，是某个 AI 写进去的</td>
+</tr>
+<tr>
+<td>「动物资产由代码生成」</td>
+<td>出厂那几张是 AI 生成的</td>
+</tr>
+<tr>
+<td>「某个姿态工具一跑就会失败」</td>
+<td>从未跑过，那是从一行警告推的</td>
+</tr>
+<tr>
+<td>「实测有 23 个 CC0 雪原素材包」</td>
+<td>只有 1 个</td>
+</tr>
+<tr>
+<td>「27 张 PNG」</td>
+<td>30 张</td>
+</tr>
+</tbody>
+</table>
+<p>第一条最贵：后来的 AI 把它当成了我的事实，接着推出「所以该降低美术标准」。</p>
+<p>修法只有一条，而且很便宜：<strong>写指针，不写副本</strong>。别在交接文档里再抄一遍数字，写「见陷阱 30」。指针不会过期，副本会——同一个断言被复制到 N 个文件，就独立过期 N 次。</p>
+<p>写这篇时我照这条做了一遍，顺手量了那两份素材。它写着「333 份过程报告里只有 6 份声明了基线」，而现在仓库里是 873 份文件、57 份带基线。比例没怎么变，数字全变了。<strong>如果我直接抄进文章，你读到的就是一份刚出生就已经过期的数字。</strong></p>
+<h2 id="五测出来的还是推断的">五、测出来的，还是推断的</h2>
+<p>这是 AI 协作里最贵的一类错，也是最隐蔽的：<strong>把「关于我环境的断言」当成「关于世界的断言」</strong>。</p>
+<p>一次会话里，参与编排的那个 AI 犯了六次，形态一模一样。它说「你的目标是某某岗位」（编的），说「这个工具跑不了」（从未跑过）。它还说「你的浏览器反复断线」（我根本没打开过），说「你关掉了服务」（我只是关了个标签页）。每一次都语气确定，每一次都没有那次运行的证据。</p>
+<p>可执行的纪律有三条。<strong>任何「全绿 / 通过 / 跑起来了」都必须能指出是哪一次运行、哪一行输出</strong>；指不出来的一律改写为「我还没跑」。<strong>写「做不到」时必须同时写下试过什么</strong>。否则那条关于自己的断言会变成关于世界的结论，让人放弃一条其实没测过的路。<strong>报告首行加机器可读的基线头</strong>，没有头就当作不可引用。</p>
+<p>第三条的理由是实测的：那批过程报告里，绝大多数读不出自己是什么时候写的。真实事故是一份报告老实写了基线，一天后它列的待办里四条已经修好，而读的人照样按它开工——一天白干。<strong>在过期的文档下工作就是白干。</strong></p>
+<h2 id="六开工清单把探针放在第一天">六、开工清单：把探针放在第一天</h2>
+<pre><code class="language-flow">第 1 天
+　写一句话：承重层是哪一层
+　做最丑的探针：一张核心资产给人看
+　↓
+　AI 做得了这一层吗
+　做不了 → 就在这里换方向，最便宜
+第 2、3 天
+　先出能看的东西，不是正确的东西
+　让判断者看原始全帧，不看放大图
+之后
+　每加一层，问这层谁负责判断
+　文档只写记录与规则，断言只写指针
+</code></pre>
+<p>这份清单里，只有第二条需要一点判断力：<strong>先出能看的东西，再出正确的东西</strong>。顺序反了，正确的东西会堆在一层坏地基上。</p>
+<p>还有一条边界要说清楚：这套做法不适用于所有项目。反过来，<strong>如果产品的承重层本来就在可验证的那一侧</strong>，AI 协作几乎是无痛的。数据管道、自动化、工具链都是这一类，纪律越严收益越大。它只在承重层落在品味上时失效。所以第一天的那个问题不是「AI 行不行」，而是「我卖的这一层，能不能被断言」。</p>
+<h2 id="收尾把工具对准承重层">收尾：把工具对准承重层</h2>
+<p>回头看，那台验证环没有错，陷阱台账没有错，先失败一次的纪律也没有错。<strong>它们只是这次保护错了对象。</strong></p>
+<p>同一个 AI，在同一段时间里，把机制、测试、工具链这些可验证的层做得相当扎实——这部分我至今认账。它没能做到的，是判断那层没人能替它判断的东西，而它也没有告诉我它判断不了。</p>
+<p>所以下一个项目，我会先花一天，把那个最丑的探针做出来，拿给人看。</p>
+<p><strong>瓶颈是可预测的；预测它要一天，不预测它要几个月。</strong></p>
+</div></div></article></main><footer class="footer" data-astro-cid-jo6i4kqk><div class="container" data-astro-cid-jo6i4kqk><p class="text-pixel foot-line" data-astro-cid-jo6i4kqk>© 2026 Matt · built with Astro</p><p class="foot-credit" data-astro-cid-jo6i4kqk>中文像素字体 <a href="https://github.com/SolidZORO/zpix-pixel-font" target="_blank" rel="noopener" data-sfx-role="click" data-astro-cid-jo6i4kqk>Zpix</a> by SolidZORO</p></div><!-- 猫（截图脚本/过往草稿）已从 footer 移除：2026-08-31 决定只在 Nav 放一只睡猫，底部不再放猫。 --></footer><script type="module" src="/8bit-me/_astro/SideDock.astro_astro_type_script_index_0_lang.BeDAQIdz.js"></script><script type="module" src="/8bit-me/_astro/Konami.astro_astro_type_script_index_0_lang.RDt3UWSo.js"></script><canvas id="cursorfx-canvas" aria-hidden="true" data-astro-cid-crcialzl></canvas><script type="module" src="/8bit-me/_astro/CursorFx.astro_astro_type_script_index_0_lang.BPOf4GIn.js"></script><div id="ptrans-host" class="ptrans-host" aria-hidden="true"></div><script type="module" src="/8bit-me/_astro/PageTrans.astro_astro_type_script_index_0_lang.DQ4iUEqz.js"></script><!-- is:global：幕帘元素均在运行时 createElement 生成（无 data-astro-cid），
+     带 scope 的规则会全部失配导致转场不可见（曾踩坑） --><script type="module" src="/8bit-me/_astro/SfxRoles.astro_astro_type_script_index_0_lang.CU4lzNGI.js"></script></body></html>

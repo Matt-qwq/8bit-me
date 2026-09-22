@@ -1,0 +1,85 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>:root{--c-bg:#0b102c;--c-panel:#202a5e;--c-line:#39437a;--c-accent:#ffd27a;--c-text:#e8ecf5;}</style><style>@font-face{font-family:'Zpix';font-style:normal;font-weight:400;font-display:block;src:url('/8bit-me/fonts/zpix.subset.woff2') format('woff2'),url('/8bit-me/fonts/zpix.ttf') format('truetype');}</style><link rel="icon" type="image/svg+xml" href="/8bit-me/favicon.svg"><link rel="icon" href="/8bit-me/favicon.ico"><link rel="preload" as="font" type="font/woff2" href="/8bit-me/fonts/zpix.subset.woff2" crossorigin="anonymous"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="Astro v7.2.7"><title>给 KDE 写一个 Wallpaper Engine 兼容层：逆向、渲染与百余条教训 | 8bit-me</title><meta name="description" content="给 KDE/Plasma 的壁纸兼容层复盘：不调用 Wallpaper Engine 运行时，byte-level 逆向 Steam 创意工坊的私有格式。三条渲染管线怎么搭、Scene 私有容器怎么拆、渲染怎么与官方逐像素对质、怎么与 plasmashell 硬约束共存、moderngl 烘焙的 bundle 契约如何管住两端，最后收进百余条 lesson 笔记。"><link rel="canonical" href="https://matt-qwq.github.io/8bit-me/blog/2026-08-29-plasma-wallpaper-engine-reversing/"><meta property="og:title" content="给 KDE 写一个 Wallpaper Engine 兼容层：逆向、渲染与百余条教训 | 8bit-me"><meta property="og:description" content="给 KDE/Plasma 的壁纸兼容层复盘：不调用 Wallpaper Engine 运行时，byte-level 逆向 Steam 创意工坊的私有格式。三条渲染管线怎么搭、Scene 私有容器怎么拆、渲染怎么与官方逐像素对质、怎么与 plasmashell 硬约束共存、moderngl 烘焙的 bundle 契约如何管住两端，最后收进百余条 lesson 笔记。"><meta property="og:type" content="website"><meta property="og:site_name" content="8bit-me"><meta property="og:url" content="https://matt-qwq.github.io/8bit-me/blog/2026-08-29-plasma-wallpaper-engine-reversing/"><link rel="stylesheet" href="/8bit-me/_astro/BaseLayout.q51SGnQ2.css"><style>.cover-art[data-astro-cid-dgzmdkyj]{flex:1 1 0;width:100%;height:100%;min-height:0;display:block}.cover-art[data-astro-cid-dgzmdkyj] .ink-accent[data-astro-cid-dgzmdkyj]{fill:var(--c-accent)}.cover-art[data-astro-cid-dgzmdkyj] .ink-light[data-astro-cid-dgzmdkyj]{fill:var(--c-text)}.cover-art[data-astro-cid-dgzmdkyj] .ink-dark[data-astro-cid-dgzmdkyj]{fill:var(--c-line)}
+.post[data-astro-cid-zg7dkzxc]{padding-top:2rem}.back[data-astro-cid-zg7dkzxc]{letter-spacing:var(--ls-12);color:var(--color-text-dim);font-size:.75rem;line-height:16px}.back[data-astro-cid-zg7dkzxc]:hover{color:var(--c-text)}.head[data-astro-cid-zg7dkzxc]{align-items:flex-start;gap:1.25rem;margin:1.5rem 0 2.5rem;display:flex}.head-main[data-astro-cid-zg7dkzxc]{flex:1;min-width:0}.head[data-astro-cid-zg7dkzxc] h1[data-astro-cid-zg7dkzxc]{letter-spacing:var(--ls-20);font-size:1.25rem;line-height:28px}@media (width<=560px){.head[data-astro-cid-zg7dkzxc]{gap:.9rem}}.meta[data-astro-cid-zg7dkzxc]{font-family:var(--font-mono);letter-spacing:normal;color:var(--color-text-dim);flex-wrap:wrap;align-items:center;gap:.6rem;font-size:.75rem;line-height:16px;display:flex}.meta[data-astro-cid-zg7dkzxc] .sep[data-astro-cid-zg7dkzxc]{color:var(--c-line)}.prose[data-astro-cid-zg7dkzxc] h2{letter-spacing:var(--ls-18);margin-block:2rem .75rem;font-size:1.125rem;line-height:24px}.prose[data-astro-cid-zg7dkzxc] h3{letter-spacing:var(--ls-16);margin:1.5rem 0 .5rem;font-size:1rem;font-weight:700;line-height:24px}.prose[data-astro-cid-zg7dkzxc] p{color:var(--color-text)}.prose[data-astro-cid-zg7dkzxc] strong{font-weight:700}.prose[data-astro-cid-zg7dkzxc] li+li{margin-top:.5em}.prose[data-astro-cid-zg7dkzxc] code{font-family:var(--font-mono);letter-spacing:normal;background-color:color-mix(in srgb, var(--c-line) 40%, var(--c-bg));padding:.1em .35em;font-size:.875em}.prose[data-astro-cid-zg7dkzxc] pre{border:1px solid var(--c-line);background-color:color-mix(in srgb, var(--c-line) 35%, var(--c-bg));padding:1rem;overflow-x:auto}.prose[data-astro-cid-zg7dkzxc] pre code{letter-spacing:normal;background:0 0;padding:0;font-size:.875rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] pre:has(>code.language-flow){font-family:var(--font-pixel);letter-spacing:var(--ls-12);color:var(--c-text);background-color:color-mix(in srgb, var(--c-line) 25%, var(--c-bg));font-size:.75rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] pre:has(>code.language-flow)>code{font-family:var(--font-pixel);letter-spacing:var(--ls-12);font-size:.75rem;line-height:20px}.prose[data-astro-cid-zg7dkzxc] blockquote{border-left:2px solid var(--c-accent);color:var(--color-text-dim);margin:1rem 0;padding-left:1rem}.prose[data-astro-cid-zg7dkzxc] ul,.prose[data-astro-cid-zg7dkzxc] ol{padding-inline-start:1.5rem}.prose[data-astro-cid-zg7dkzxc] hr{border:none;border-top:1px solid var(--c-line);width:6rem;margin:2rem auto}
+</style></head><body><div class="bgfx-canvas" aria-hidden="true" data-astro-cid-64axyb7o><canvas id="bgfx-canvas" data-astro-cid-64axyb7o></canvas></div><div class="bgfx-scrim" aria-hidden="true" data-astro-cid-64axyb7o></div><script type="module" src="/8bit-me/_astro/BgFx.astro_astro_type_script_index_0_lang.aSZ2FqPz.js"></script><header class="nav" data-astro-cid-wpvy4v7s><div class="nav-inner container" data-astro-cid-wpvy4v7s><a class="logo text-pixel" href="#main" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>8bit<span class="dot" data-astro-cid-wpvy4v7s>.</span>me</a><nav aria-label="主导航" data-astro-cid-wpvy4v7s><ul data-astro-cid-wpvy4v7s><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#hero" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>首页</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#about" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>关于</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#projects" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>作品</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#skills" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>技能</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/#contact" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>联系</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/blog" class="is-active" aria-current="page" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>博客</a></li><li data-astro-cid-wpvy4v7s><a href="/8bit-me/lab" data-sfx-role="nav" data-sfx-hover data-astro-cid-wpvy4v7s>实验场</a></li></ul></nav><!-- 丝印层吉祥物：坐在板边打瞌睡的睡猫（GIF 呼吸动画，2026-08-31 由 pose1 睡姿素材抠透明）。
+         刻意不用 <a> 包裹：nav-links.spec.ts 有「全站 a[href^="#"] 目标必须存在」的硬契约，
+         装饰元素包成锚点会在 /blog、/404 上炸掉。纯装饰 → alt='' 且不进 tab 序。 --><span class="nav-cat" aria-hidden="true" data-astro-cid-wpvy4v7s><img class="nav-cat__img" src="/8bit-me/cats/nav_sleep.gif" alt="" data-astro-cid-wpvy4v7s></span></div></header><script type="module">var e=document.querySelectorAll(`main section[id]`);if(e.length>0){let t=Array.from(document.querySelectorAll(`.nav a[href*="#"]`));new Map(Array.from(e).map(e=>[`#${e.id}`,e]));let n=new IntersectionObserver(e=>{let n=null;for(let t of e)t.isIntersecting&&(n=`#${t.target.id}`);n&&t.forEach(e=>e.classList.toggle(`is-active`,e.hash===n))},{rootMargin:`-40% 0px -55% 0px`});e.forEach(e=>n.observe(e))}</script><main id="main"><article class="container container--prose post" data-astro-cid-zg7dkzxc><p data-astro-cid-zg7dkzxc><a class="back text-pixel" href="/8bit-me/blog" data-sfx-role="nav" data-astro-cid-zg7dkzxc>← BACK</a></p><header class="head" data-astro-cid-zg7dkzxc><span class="cover-block lg" aria-hidden="true" data-astro-cid-dgzmdkyj><svg class="cover-art" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false" data-astro-cid-dgzmdkyj><path class="ink-accent" d="M7 6h1v1h-1zM8 6h1v1h-1zM7 7h1v1h-1zM8 7h1v1h-1z" data-astro-cid-dgzmdkyj></path><path class="ink-light" d="M3 3h1v1h-1zM4 3h1v1h-1zM5 3h1v1h-1zM6 3h1v1h-1zM7 3h1v1h-1zM8 3h1v1h-1zM9 3h1v1h-1zM10 3h1v1h-1zM11 3h1v1h-1zM12 3h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM8 4h1v1h-1zM9 4h1v1h-1zM10 4h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM3 5h1v1h-1zM4 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM11 6h1v1h-1zM12 6h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM11 8h1v1h-1zM12 8h1v1h-1zM3 9h1v1h-1zM4 9h1v1h-1zM5 9h1v1h-1zM6 9h1v1h-1zM7 9h1v1h-1zM8 9h1v1h-1zM9 9h1v1h-1zM10 9h1v1h-1zM11 9h1v1h-1zM12 9h1v1h-1zM3 10h1v1h-1zM4 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM9 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM12 10h1v1h-1zM3 15h1v1h-1zM4 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1z" data-astro-cid-dgzmdkyj></path></svg></span><div class="head-main" data-astro-cid-zg7dkzxc><h1 data-astro-cid-zg7dkzxc>给 KDE 写一个 Wallpaper Engine 兼容层：逆向、渲染与百余条教训</h1><p class="meta" data-astro-cid-zg7dkzxc><time datetime="2026-08-29T00:00:00.000Z" data-astro-cid-zg7dkzxc>2026-08-29</time><span class="sep" data-astro-cid-zg7dkzxc>·</span><span data-astro-cid-zg7dkzxc><span class="tag text-pixel" data-astro-cid-zg7dkzxc>C++</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>Qt</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>KDE</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>逆向工程</span><span class="tag text-pixel" data-astro-cid-zg7dkzxc>project walkthrough</span></span></p></div></header><div class="prose pixel-panel" data-astro-cid-zg7dkzxc><div class="prose-body" data-astro-cid-zg7dkzxc><blockquote>
+<p>复盘整理：plasma 逆向工程完成于 2026-07 至 08 月，本文整理于 2026-08。</p>
+</blockquote>
+<p>KDE 桌面没有官方视频壁纸能力。Steam 创意工坊里，Wallpaper Engine（下称 WE）
+攒下了成体系的壁纸生态。视频、网页与实时渲染场景，三类都全。</p>
+<p>这篇复盘的主角是一个 Plasma 6 壁纸插件。它不调用 WE 的运行时，而是从
+byte-level（字节级）开始逆向壁纸格式。这样 KDE 就能原生消费合法的
+创意工坊内容。一句纲领立住全文：逆向兼容不是偷代码，是读懂格式后做
+自己的实现。</p>
+<p>正文走六段：先是三条管线，再是 Scene 容器逆向。随后是像素对质、平台共存
+与 bundle 契约，末段收进笔记习惯。</p>
+<h2 id="一搭三条独立渲染管线">一、搭三条独立渲染管线</h2>
+<p>插件按壁纸类型搭管线，三类素材各走一条。视频线看似简单，难点全在「无缝」。</p>
+<p>无缝来自素材元数据的精确处理。循环接缝留半帧不行，多一帧也不行。</p>
+<p>网页壁纸走 QtWebEngine 渲染，三条线里它的硬约束最重，细节放到平台一节。
+场景壁纸最硬核，走自研 C++ 渲染引擎。引擎直接挂 Qt Quick 的
+<code>QSGRenderNode</code>，逐对象复现 WE 的场景描述。</p>
+<p>壁纸类型定了，真正的硬仗在 Scene 那一包私有数据上。</p>
+<h2 id="二拆-scene-的私有容器">二、拆 Scene 的私有容器</h2>
+<p>WE 的场景包是私有容器格式，从壳体到纹理全是黑的。引擎要吃进这份数据，
+得先拆开五道门。</p>
+<h3 id="pkgv-容器双格式">PKGV 容器双格式</h3>
+<p>早期结构靠开源解析项目 repkg 确认。再往后发现，同一容器其实有两代格式：
+版本 0005 与 0021。两代各配一套解析策略，固定偏移与魔数扫描双轨并行。</p>
+<h3 id="纹理三级封装">纹理三级封装</h3>
+<p>容器里的纹理走三级封装链：<code>TEXV0005 → TEXI → TEXB</code>。解码分两步，先 LZ4
+解压，再做 BCn（BC3/BC1）解码。BC3 纹理偶尔短缺，解码器会按实际高度
+自适应解码。官方数据偶尔不自重，解码器得<strong>比官方更宽容</strong>。</p>
+<h3 id="名字链追踪">名字链追踪</h3>
+<p>模型引用哪张材质、材质又引用哪张纹理，原生格式不直接给答案。只能靠
+<code>model → material → .tex</code> 的名字链逐级解析出来。</p>
+<h3 id="像素区里抠-mp4">像素区里抠 MP4</h3>
+<p>部分场景把 MP4 藏在纹理的像素区域里。提取器逐字节扫 <code>TEXV</code> 像素区，
+把 MP4 字节抠出并落盘缓存。随后起一个独立视频守护进程，走共享内存传帧，
+再上 GL 纹理。这一绕避开了三个麻烦，比预想省心。</p>
+<h3 id="素材兜底回退">素材兜底回退</h3>
+<p>粒子预设的纹理不在壁纸包里，回退去读 WE 安装目录的素材。逆向兼容要兼容
+到「对方产品目录」这一层，说的就是这种回退。</p>
+<p>格式读通了，画面还得经得起对质。像不像，肉眼说了算。</p>
+<h2 id="三与官方渲染逐像素对质">三、与官方渲染逐像素对质</h2>
+<p>渲染要到像素级才算数：像还是糊，肉眼看得见。最磨人的是多 pass 反复尝试，
+改一版，跑一版，多次尝试才匹配官方输出。</p>
+<p>光晕效果（Godrays）在片元着色器里逼近官方：24 步 raycast，加噪声抖动与
+距离衰减。另一类是字段名与含义不符。<code>sequencemultiplier</code> 在这份素材里是
+帧率，不是乘数。模糊半径则藏在 <code>blurprecise</code> 的 scale 里。</p>
+<p>这类「名字误导人」的事实，<strong>靠实证，不靠文档</strong>，只能逐条钉死。</p>
+<h2 id="四与-plasmashell-硬约束共存">四、与 plasmashell 硬约束共存</h2>
+<p>KDE 的 plasmashell 进程硬编码 <code>--disable-gpu</code>。后果有两条：</p>
+<ul>
+<li>WebGL 壁纸全黑。</li>
+<li>软件渲染回退（SwiftShader）直接崩溃，记录在 KDE 讨论区 #15478。</li>
+</ul>
+<p>这条约束逼插件在所有 GPU 路径上自证：不依赖事件循环外的 GPU。它还逼出了
+<strong>免注销热重载</strong>：配置经 KConfig 的 <code>_ReloadCount</code> 机制改完即生效。</p>
+<p>开发期不用反复注销登录，调试着色器时价值巨大。</p>
+<h2 id="五用-bundle-契约管住两端">五、用 bundle 契约管住两端</h2>
+<p>图形管线没法在纯 C++ 里闭门造车。解包场景、预计算 77 个渲染层与
+NDC（归一化设备坐标）变换矩阵，都放到离线侧完成。这一步交给 Python 的
+moderngl（OpenGL 绑定库）来做。</p>
+<p>烘焙产物是一份 <code>scene_bundle.bin</code>，C++ 侧消费的正是同一份 bundle。
+契约一句话：<code>scene_bundle.bin</code> 是<strong>唯一契约</strong>。Python 与 C++ 不共享任何
+运行时状态，只共享这一份文件。</p>
+<p>事实只存一处，两端都从它读。契约除此之外，没有第二条。</p>
+<h2 id="六沉淀百余条-lesson-笔记">六、沉淀百余条 lesson 笔记</h2>
+<p>全程沉淀了一套编号分卷的 lesson（经验条目）笔记，百余条按阶段分区，收成三类。</p>
+<ul>
+<li>格式逆向事实：对象没有 <code>type</code> 字段，<code>sequencemultiplier</code> 其实是帧率。</li>
+<li>平台坑：<code>QSGRenderNode</code> 层级规则、<code>sync()</code> 深拷贝重置粒子、QML 缓存失效。</li>
+<li>工程纪律：先验环境再写码、一次只改一件事、热重载免注销。</li>
+</ul>
+<p>这些笔记既是开发日志，也是写给未来的自己与合作者的领域规范。
+这套习惯的内核：每条教训都内联成规范。</p>
+<h2 id="收尾价值在三线闭环">收尾：价值在三线闭环</h2>
+<p>这个插件的价值不在代码量，而在三件事的完整闭环：字节级格式逆向、
+跨进程跨语言的渲染、与桌面硬约束共存。做完这一趟，逆向私有格式、
+设计跨语言契约、在别人定死的运行时里干活，都成了有完整方法论支撑的能力。</p>
+<p>起点是那个决定：不调用 WE 运行时，只读它的格式。仓库以 GPLv2+ 协议开源：
+<a href="https://github.com/Matt-qwq/-plasma-wallpaper-engine">Matt-qwq/-plasma-wallpaper-engine</a></p>
+<p>终点回到开篇那句话：逆向兼容不是偷代码，是读懂格式后做自己的实现。</p>
+</div></div></article></main><footer class="footer" data-astro-cid-jo6i4kqk><div class="container" data-astro-cid-jo6i4kqk><p class="text-pixel foot-line" data-astro-cid-jo6i4kqk>© 2026 Matt · built with Astro</p><p class="foot-credit" data-astro-cid-jo6i4kqk>中文像素字体 <a href="https://github.com/SolidZORO/zpix-pixel-font" target="_blank" rel="noopener" data-sfx-role="click" data-astro-cid-jo6i4kqk>Zpix</a> by SolidZORO</p></div><!-- 猫（截图脚本/过往草稿）已从 footer 移除：2026-08-31 决定只在 Nav 放一只睡猫，底部不再放猫。 --></footer><script type="module" src="/8bit-me/_astro/SideDock.astro_astro_type_script_index_0_lang.BeDAQIdz.js"></script><script type="module" src="/8bit-me/_astro/Konami.astro_astro_type_script_index_0_lang.RDt3UWSo.js"></script><canvas id="cursorfx-canvas" aria-hidden="true" data-astro-cid-crcialzl></canvas><script type="module" src="/8bit-me/_astro/CursorFx.astro_astro_type_script_index_0_lang.BPOf4GIn.js"></script><div id="ptrans-host" class="ptrans-host" aria-hidden="true"></div><script type="module" src="/8bit-me/_astro/PageTrans.astro_astro_type_script_index_0_lang.DQ4iUEqz.js"></script><!-- is:global：幕帘元素均在运行时 createElement 生成（无 data-astro-cid），
+     带 scope 的规则会全部失配导致转场不可见（曾踩坑） --><script type="module" src="/8bit-me/_astro/SfxRoles.astro_astro_type_script_index_0_lang.CU4lzNGI.js"></script></body></html>
