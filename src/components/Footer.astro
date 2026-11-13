@@ -1,15 +1,33 @@
 ---
 import { siteConfig } from '../lib/config';
+import { iconSvgInner } from '../lib/pixel-icons';
 const year = new Date().getFullYear();
 ---
 
 <footer class="footer">
   <div class="container">
+    <p class="foot-mark text-pixel" aria-hidden="true">8BIT-ME</p>
     <p class="text-pixel foot-line">
-      © {year} {siteConfig.author} · built with Astro
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 15 15"
+        shape-rendering="crispEdges"
+        aria-hidden="true"
+        class="foot-icon"
+        set:html={iconSvgInner('rocket', 'var(--c-accent)')}
+      />© {year} {siteConfig.author} · built with Astro
     </p>
     <p class="foot-credit">
-      中文像素字体 <a href="https://github.com/SolidZORO/zpix-pixel-font" target="_blank" rel="noopener" data-sfx-role="click">Zpix</a> by SolidZORO
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 15 15"
+        shape-rendering="crispEdges"
+        aria-hidden="true"
+        class="foot-icon"
+        set:html={iconSvgInner('font', 'var(--c-accent)')}
+      />中文像素字体 <a href="https://github.com/SolidZORO/zpix-pixel-font" target="_blank" rel="noopener" data-sfx-role="click">Zpix</a> by SolidZORO
     </p>
   </div>
 
@@ -22,27 +40,54 @@ const year = new Date().getFullYear();
     position: relative;
     margin-top: 0;
     padding: 1rem 0;
-    border-top: 1px solid color-mix(in srgb, var(--gb-1) 40%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--c-line) 40%, transparent);
+  }
+
+  /* 像素签名（homepage-optimization-v1 · B2，2026-10-01 作者批准）：
+     Zpix 48px + 1px 描边、填充透明 = 空心阶梯字标（eboy 的空心 logo 语言，
+     比 1px 结构线重、比实心像素块轻）。描边走 --c-line token 随主题；
+     是文本层不是装饰层（texture-budget 不计），aria-hidden（与 Nav 站名重复）。 */
+  .foot-mark {
+    margin: 0.6rem 0 0;
+    font-size: 3rem; /* 48px 档 */
+    line-height: 56px;
+    letter-spacing: var(--ls-48);
+    text-align: center;
+    color: transparent;
+    -webkit-text-stroke: 1px var(--c-line);
   }
 
   .foot-line {
-    font-size: 0.55rem;
-    line-height: 1.6;
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
     color: var(--color-text-dim);
     text-align: center;
+  }
+
+  /* 行内点阵图标（B3 复用）：火箭 = built with Astro、字模 A = 像素字体署名。
+     标识语言非装饰层；基线对齐压 2px 坐 12px 丝印行。 */
+  .foot-icon {
+    vertical-align: -2px;
+    margin-right: 5px;
   }
 
   .foot-credit {
     margin: 0.4rem 0 0;
     font-family: var(--font-body);
-    font-size: 0.6rem;
-    line-height: 1.5;
+    font-size: 0.75rem;
+    letter-spacing: normal;
+    line-height: 16px;
     color: var(--color-text-dim);
     text-align: center;
   }
   .foot-credit a {
-    color: var(--gb-2);
-    text-decoration: none;
+    /* 文字结构色 + 强调色下划线（accent 作文字在 dawnbringer-ember 4.02 破 AA） */
+    color: var(--color-text-dim);
+    text-decoration: underline;
+    text-decoration-color: var(--c-accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
   }
   .foot-credit a:hover {
     text-decoration: underline;

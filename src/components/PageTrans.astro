@@ -9,7 +9,7 @@
  * - 光束永远向下扫：出场（关机）深色幕布锚顶 0→满，光束贴下缘下扫、上方随暗；
  *   入场（开机）幕布锚底 满→0，光束贴上缘下扫、上方随光束点亮新页。
  * - 幕布 = 恒定暗场（gb-0 暗化 30%，13 主题统一“关机黑屏”读感）+ CRT 细扫描线。
- * - 光束 = 双芯：白热亮芯（3px）+ 强调色磷光晕（--gb-2）+ 辉光；无尾迹（拖影已否决）。
+ * - 光束 = 双芯：白热亮芯（3px）+ 强调色磷光晕（--c-accent）+ 辉光；无尾迹（拖影已否决）。
  * - 运动 = WAAPI steps() 整齿阶跃（齿高 16px），高度恒为齿的整数倍 = 永远对格；
  *   变齿分段：出慢起步后加速盖满（前 50% 时间走 35% 齿）/ 入快起步后减速揭幕（前 50% 走 65% 齿）。
  * - 时长：出 ≤0.34s / 入 ≤0.28s。覆盖因子 1.3（抗转屏中段露缝）；极小屏缩齿+光束 8px 封底。
@@ -41,7 +41,7 @@
 
   function accent(): string {
     return (
-      getComputedStyle(document.documentElement).getPropertyValue('--gb-2').trim() || '#ffa300'
+      getComputedStyle(document.documentElement).getPropertyValue('--c-accent').trim() || '#ffa300'
     );
   }
 
@@ -59,7 +59,8 @@
 
     const curtain = document.createElement('div');
     curtain.className = 'crt-curtain';
-    // 恒定暗场由 is:global CSS 提供（color-mix(gb-0 70%, #000) + 无 color-mix 回退）
+    // 恒定暗场：固定深蓝夜幕（夜空顶带，sky-palette 深夜帧），不随模式变浅——
+    // 两档模式下「关机」都是黑屏读感（ADR-0021）
     curtain.style.height = dir === 'out' ? '0px' : `${hFull}px`;
     if (dir === 'out') curtain.style.top = '0';
     else curtain.style.bottom = '0';
@@ -170,7 +171,7 @@
     /* 恒定暗场：gb-0 暗化 30%（13 主题统一“关机黑屏”读感；浅色主题不再变浅）
        无 color-mix 回退 = sms-surf 深底 */
     background-color: #1d2b53;
-    background-color: color-mix(in srgb, var(--gb-0) 70%, #000);
+    background-color: color-mix(in srgb, #05081a 82%, #000);
     /* 深底 + CRT 细扫描线 */
     background-image: repeating-linear-gradient(
       0deg,

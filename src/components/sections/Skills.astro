@@ -1,9 +1,19 @@
 ---
 import { siteConfig, url } from '../../lib/config';
+import { iconSvgInner, SKILL_ICONS } from '../../lib/pixel-icons';
 
 // level 0-5 → 8 段像素条（MAX_SEGMENTS 与 global.css .skill-bar 对齐）：
 // filled = floor(level / 5 * MAX_SEGMENTS)，与数值语义一致（3/5→4/8 格 50%、4/5→6/8 格 75%）
 const MAX_SEGMENTS = 8;
+
+// 行首点阵图标（homepage-optimization-v1 · B3 复用，2026-10-02 作者指示）：
+// 技能名 → SKILL_ICONS（pixel-icons.ts，与 siteConfig 互证由单测守）。
+// 图标是标识语言（同 contact 三卡），aria-hidden —— 行名自己表意。
+const rows = siteConfig.skills.map((skill) => ({
+  ...skill,
+  filled: Math.floor((skill.level / 5) * MAX_SEGMENTS),
+  icon: SKILL_ICONS[skill.name],
+}));
 ---
 
 <section id="skills">
@@ -14,30 +24,39 @@ const MAX_SEGMENTS = 8;
     <div class="pixel-panel">
       <ul class="skills">
         {
-          siteConfig.skills.map((skill) => {
-            const filled = Math.floor((skill.level / 5) * MAX_SEGMENTS);
-            return (
-              <li class="row">
-                <span class="label">{skill.name}</span>
-                <span class="skill-bar" aria-label={`${skill.name}: ${skill.level}/5`}>
-                  {
-                    Array.from({ length: MAX_SEGMENTS }, (_, i) => (
-                      <i class={i < filled ? 'on' : ''}></i>
-                    ))
-                  }
-                </span>
-                <span class="level text-pixel"
-                  >{skill.level}<span class="sep">/</span>5</span
-                >
-              </li>
-            );
-          })
+          rows.map((row) => (
+            <li class="row">
+              <span class="label">
+                {row.icon && (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 15 15"
+                    shape-rendering="crispEdges"
+                    aria-hidden="true"
+                    set:html={iconSvgInner(row.icon, 'var(--c-accent)')}
+                  />
+                )}
+                {row.name}
+              </span>
+              <span class="skill-bar" aria-label={`${row.name}: ${row.level}/5`}>
+                {
+                  Array.from({ length: MAX_SEGMENTS }, (_, i) => (
+                    <i class={i < row.filled ? 'on' : ''}></i>
+                  ))
+                }
+              </span>
+              <span class="level text-pixel"
+                >{row.level}<span class="sep">/</span>5</span
+              >
+            </li>
+          ))
         }
       </ul>
       <p class="note text-dim">
         以上为自评概览（self-assessment）；证据链：方法论三篇
         <a href={url('blog/2026-08-29-rpa-migration-methodology')}>RPA 迁移</a> /
-        <a href={url('blog/2026-08-29-data-pipeline-engineering')}>数据管道</a> /
+        <a href={url('blog/2026-08-31-anti-scraping-risk-control')}>数据管道</a> /
         <a href={url('blog/2026-08-29-reversing-unknown-internal-systems')}>黑盒逆向</a>
         （均 Python 生态）+ 本站工程（TypeScript / Astro / Web Audio），
         RPA 项另持影刀高级 RPA 技能证书；AI 辅助开发见 RPA 迁移方法论篇，
@@ -57,20 +76,34 @@ const MAX_SEGMENTS = 8;
     gap: 0.9rem;
   }
 
+  /* 三列紧挨（2026-10-30 W4·S2）：旧写法 9rem 1fr auto 把分数推到面板最右，
+     中间留 490px 死区——眼睛连不上「条」和「4/5」。现在条铺到 20rem、分数紧跟条，
+     行内三段成一簇，右侧留白由面板承担。 */
   .row {
     display: grid;
-    grid-template-columns: 8rem 1fr auto;
+    grid-template-columns: 9rem auto 1fr;
     align-items: center;
     gap: 1rem;
   }
 
   .label {
-    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.875rem;
+    letter-spacing: normal;
+    line-height: 20px;
+  }
+  .label svg {
+    flex: none;
   }
 
   .level {
-    font-size: 0.55rem;
-    color: var(--gb-2);
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    /* 等级文字：结构色（accent 作文字在 dawnbringer-ember 仅 4.02:1） */
+    color: var(--color-text-dim);
   }
 
   /* 斜杠压暗 + 留空：像素字体下「4/5」易被读成「45」 */
@@ -81,12 +114,21 @@ const MAX_SEGMENTS = 8;
 
   .note {
     margin-top: 1.25rem;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
+    letter-spacing: normal;
+    line-height: 24px;
+    /* 末行孤字：全局 p 的 text-wrap: pretty 在 Chrome 里对本段几乎无效
+       （实测 0.076 → 0.098 行宽，仍是「GitHub。」单独一行）；
+       本段只有 3–6 行，用 balance 把各行拉平（实测 1440/768/390 三档
+       末行从 0.08 / 0.39 / 0.47 回到 0.64 / 0.78 / 0.92）。
+       超 6 行时 Chrome 自动退回普通断行，长文正文不受影响。 */
+    text-wrap: balance;
   }
 
-  /* 脚注链接可见性：accent 色 + 2px 下划线（fix 无下划线+最亮色倒挂），hover 继承全局变 gb-3 */
+  /* 脚注链接可见性：文字结构色 + 2px 强调色下划线（fix 无下划线+最亮色倒挂），
+     hover 继承全局变 gb-3 */
   .note a {
-    color: var(--color-accent);
+    color: var(--color-text);
     text-decoration: underline;
     text-decoration-thickness: 2px;
     text-underline-offset: 3px;
@@ -98,6 +140,11 @@ const MAX_SEGMENTS = 8;
     }
     .label {
       grid-column: 1 / -1;
+    }
+    /* 窄屏条跟着 1fr 轨道走（2026-10-30）：20rem 定宽在 390 宽下会顶出 13px
+       横向溢出（1fr 轨道有确定宽度，100% 在这里能解出来）。 */
+    .skill-bar {
+      width: 100%;
     }
   }
 </style>

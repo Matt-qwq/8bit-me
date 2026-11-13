@@ -1,7 +1,7 @@
 /**
  * fx-runtime —— canvas 特效运行时（fx runtime 控制器层，近纯：DOM 绑定集中于此）。
  * BgFx / CursorFx 共享底子：
- * - readPalette（--gb-0/--gb-2/--gb-3）+ additive 门控（唯一裁决点 = additiveFor(isDark(bg))，
+ * - readPalette（--c-bg/--c-accent/--c-text）+ additive 门控（唯一裁决点 = additiveFor(isDark(bg))，
  *   曾漂移：CursorFx 用 isDark(accent) 判门控致暗背景辉光被静默关闭，见 CONTEXT.md fx runtime 词条）
  * - dpr ≤1.5 clamp + canvas 尺寸 + setTransform
  * - [data-theme] MutationObserver 跟随（refresh → host.onTheme）
@@ -18,7 +18,7 @@ export function clampDpr(dpr: number): number {
   return Math.min(dpr || 1, 1.5);
 }
 
-/** additive 门控 —— 唯一裁决点：背景色 --gb-0 亮度 < 128 才允许辉光（浅色退回 source-over 防洗白） */
+/** additive 门控 —— 唯一裁决点：背景色 --c-bg 亮度 < 128 才允许辉光（浅色退回 source-over 防洗白） */
 export function additiveFor(palette: Palette): boolean {
   return isDark(palette.bg);
 }
@@ -66,7 +66,7 @@ export function createFxRuntime(
   function readPalette(): Palette {
     const cs = getComputedStyle(document.documentElement);
     const g = (p: string) => cs.getPropertyValue(p).trim() || '#ffffff';
-    return { bg: g('--gb-0'), accent: g('--gb-2'), light: g('--gb-3') };
+    return { bg: g('--c-bg'), accent: g('--c-accent'), light: g('--c-text') };
   }
 
   /** 主题/配色重读（MutationObserver 触发） */
@@ -84,6 +84,10 @@ export function createFxRuntime(
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // 关内部插值：canvas 尺寸重置会重置此状态，所以必须每次 resize 重设。
+    // 倒影逐行镜像采样要最近邻（像素语言不许抗锯齿灰边）；
+    // CSS 的 image-rendering: pixelated 只管元素缩放，管不到 drawImage。
+    ctx.imageSmoothingEnabled = false;
     host.onResize({ width: w, height: h });
   }
 

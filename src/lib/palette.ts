@@ -1,7 +1,7 @@
 /**
  * palette —— 主题色纯函数库（fx runtime 的取色/判定层，零 DOM）。
  * BgFx / CursorFx 共享：hex→rgba、暗度判定。
- * additive 门控语义 = 背景色 --gb-0 亮度 < DARK_THRESHOLD（浅色退回 source-over 防洗白）；
+ * additive 门控语义 = 背景色 --c-bg 亮度 < DARK_THRESHOLD（浅色退回 source-over 防洗白）；
  * 单一裁决点，见 fx-runtime.ts 的 additiveFor()（曾漂移：CursorFx 用 isDark(accent) 判门控，见 CONTEXT.md fx runtime 词条）。
  * 单测：tests/unit/fx-palette.spec.ts。
  */
@@ -22,7 +22,7 @@ export function isDark(hex: string): boolean {
   return lum < DARK_THRESHOLD;
 }
 
-/** 主题三色（--gb-0/--gb-2/--gb-3，见 readPalette 与 themes.ts） */
+/** 主题三色（--c-bg/--c-accent/--c-text，见 readPalette 与 themes.ts） */
 export interface Palette {
   bg: string;
   accent: string;

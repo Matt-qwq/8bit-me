@@ -1,16 +1,26 @@
 /**
- * 13 套主题定义（单一数据源，三处使用方）：
- * - BaseLayout 生成主题 CSS 色块（:root[data-theme="<key>"]{--gb-0..3}）
- * - ThemeToggle 面板（显示名 + 色板点）
- * - head 预挂载脚本的合法 key 白名单（isValidTheme / themeKeys，防 FOUC）
+ * 主题定义（2026-09 重构：13 套 GB 主题 → 1 套身份 × 明暗两档，ADR-0021；
+ * 2026-09-23 作者裁决：「不要浅色主题了」—— LIGHT 档退役，站点恒暗）。
  *
- * 加新主题 = 在此数组追加一项即可，全局 CSS 与面板自动跟随，
- * 无需再改 global.css。持久化：themePref（键 '8bitme:theme'）。
+ * 设计主张：「夜晩房间」——站点的颜色从「窗外世界」的天空调色板采样
+ * （src/lib/sky-palette.ts 的 SKY_FRAMES），窗外与窗内同源，天生一体：
+ * - Dark（夜晚房间）：底色取夜空色带，正文取月光，强调取窗灯金——
+ *   夜里唯一的暖色，就是窗外人家亮着的那盏灯。
+ * 窗外世界（sky-scene）照旧跟随太阳晨昏变化——那不是「主题」，是窗外；
+ * UI 恒暗，与窗外景色的时辰无关。
+ *
+ * 四槽语义（不再是 Game Boy 槽位，按角色命名）：
+ * - bg     页面底色
+ * - panel  卡片 / 面板底色（受光面）
+ * - line   结构线 / 边框（大气透视的「地平线」）
+ * - accent 强调色（单强调色纪律保留）
+ * - text   正文 / 最亮结构色
+ *
+ * 加 / 改颜色只动本文件；global.css 与各组件自动跟随。
  */
 
 /**
  * WCAG 相对亮度与对比度工具（纯函数，单测与 SideDock guard 共用）。
- * 像素字笔画细、易"漏光"，故正文区强制守 AA(4.5:1)，建议冲 AAA(7:1)。
  */
 function parseHex(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
@@ -52,103 +62,69 @@ export function meetsContrast(fg: string, bg: string, min = 4.5): boolean {
   return (hi + 0.05) / (lo + 0.05) >= min;
 }
 
-export interface ThemeDef {
-  /** 主题 key（= CSS 选择器 [data-theme="…"] 与 localStorage 存储值） */
-  readonly key: string;
-  /** 面板主显示名 */
-  readonly label: string;
-  /** 中文描述（面板副行，dim 样式） */
-  readonly desc: string;
-  /** GB 四色（--gb-0..3 顺序，与 BaseLayout 生成的色块一致） */
-  readonly colors: readonly [string, string, string, string];
+export type ModeKey = 'dark';
+
+export interface ModeColors {
+  /** 页面底色 */
+  readonly bg: string;
+  /** 卡片 / 面板底色（受光面） */
+  readonly panel: string;
+  /** 结构线 / 边框 */
+  readonly line: string;
+  /** 强调色 */
+  readonly accent: string;
+  /** 正文 / 最亮结构色 */
+  readonly text: string;
 }
 
-/** 默认主题：无 data-theme / 无存储记录时生效（global.css :root 兜底） */
-export const DEFAULT_THEME = 'sms-surf';
+export interface ModeDef {
+  readonly key: ModeKey;
+  /** 开关按钮上的显示名 */
+  readonly label: string;
+  readonly desc: string;
+  readonly colors: ModeColors;
+}
 
-/** 13 套主题（label 与 docs/themes 预览一致） */
-export const THEMES: readonly ThemeDef[] = [
-  {
-    key: 'gb-green',
-    label: 'GB 绿',
-    desc: 'Game Boy 原生绿',
-    colors: ['#0f380f', '#306230', '#8bac0f', '#9bbc0f'],
+/**
+ * Dark —— 夜晚房间（唯一档；LIGHT 已退役，作者 2026-09-23「不要浅色主题了」）。
+ * bg = 夜空色带（alt=-0.35 帧 bands[1] #0d1234 附近）；
+ * panel = 室内一档（bands[3] #131a4c 收敛）；
+ * text = 月光（sky-palette moon #e8ecf5）；
+ * accent = 窗灯金（sky-palette windowLit #ffd27a）。
+ */
+export const DARK: ModeDef = {
+  key: 'dark',
+  label: 'DARK',
+  desc: '夜晚 · 一盏窗灯',
+  colors: {
+    bg: '#0b102c',
+    panel: '#202a5e', /* 室内一档：向夜空 band[4] #1a2264 靠拢但更亮（ΔL ≥ 0.02 可辨） */
+    line: '#39437a',
+    accent: '#ffd27a',
+    text: '#e8ecf5',
   },
-  {
-    key: 'pico8-dusk',
-    label: 'PICO-8 Dusk',
-    desc: '深夜开发机的霓虹余晖',
-    colors: ['#1D2B53', '#5F574F', '#FFA300', '#FFF1E8'],
-  },
-  {
-    key: 'sweetie16',
-    label: 'Sweetie Sixteen',
-    desc: '暖灯画室',
-    colors: ['#1A1C2C', '#333C57', '#FFCD75', '#F4F4F4'],
-  },
-  {
-    key: 'dawnbringer-ember',
-    label: 'DawnBringer Ember',
-    desc: '余烬铁匣',
-    colors: ['#45283C', '#663931', '#DF7126', '#EEC39A'],
-  },
-  {
-    key: 'nes-punch',
-    label: 'NES Punch',
-    desc: '红白冲击（浅色）',
-    colors: ['#f7f2e8', '#efe7d3', '#b91d1d', '#2a2a31'],
-  },
-  {
-    key: 'sms-surf',
-    label: 'SMS Surf',
-    desc: '世嘉蓝橙浪',
-    colors: ['#0e1526', '#182337', '#3f86e6', '#e9edf7'],
-  },
-  {
-    key: 'neogeo-gold',
-    label: 'Neo Geo Gold',
-    desc: '黑金街机',
-    colors: ['#151207', '#221d10', '#d8a52c', '#f4ecd8'],
-  },
-  {
-    key: 'inkpaper',
-    label: 'Inkpaper',
-    desc: '纸墨屏（明灰）',
-    colors: ['#e8e6dd', '#dcd8c9', '#9e1a0f', '#141414'],
-  },
-  {
-    key: 'amber-phosphor',
-    label: 'Amber Phosphor',
-    desc: '琥珀磷光',
-    colors: ['#1a0f05', '#33200c', '#ff7a1a', '#ffb454'],
-  },
-  {
-    key: 'mono-tube',
-    label: 'Mono Tube',
-    desc: '阴极单色（暗灰）',
-    colors: ['#0a0a0a', '#202020', '#bfbfb8', '#f2f2ee'],
-  },
-  {
-    key: 'midnight-arcade',
-    label: 'Midnight Arcade',
-    desc: '午夜街机',
-    colors: ['#0b0b1a', '#16162e', '#ff2a6d', '#f4f1ff'],
-  },
-  {
-    key: 'vapor-files',
-    label: 'Vapor Files',
-    desc: '紫雾档案',
-    colors: ['#0d0221', '#1b0a36', '#ff71ce', '#f6f3ff'],
-  },
-  {
-    key: 'sunset-racer',
-    label: 'Sunset Racer',
-    desc: '落日疾驰',
-    colors: ['#120725', '#1d0b33', '#ff007f', '#fff4e8'],
-  },
-] as const;
+};
 
-/** 判断某值是否为已知主题 key（防止 localStorage 中的脏数据命中未知块） */
-export function isValidTheme(value: unknown): value is string {
-  return typeof value === 'string' && THEMES.some((t) => t.key === value);
+/** 单档（顺序数组仅为兼容遍历方；LIGHT 已退役） */
+export const MODES: readonly ModeDef[] = [DARK];
+
+/** 兼容存留：历史上是「无 data-mode / 脏数据」的兜底档，现在就是唯一档（data-mode 属性已不存在，这个函数只剩旧偏好静默失效的语义） */
+export const DEFAULT_MODE: ModeKey = 'dark';
+
+/** 兼容存留：历史上挡 localStorage 脏数据；旧偏好（light/auto）一律不认 */
+export function isValidMode(value: unknown): value is ModeKey {
+  return value === 'dark';
+}
+
+/** 兼容存留：任何 key 都回暗档（LIGHT 已退役） */
+export function modeDef(key: string | null | undefined): ModeDef {
+  return DARK;
+}
+
+/** 全站颜色契约自检（单测与 SideDock guard 共用）：正文 vs 底 / 正文 vs 面板全过 AA */
+export function modeContrastOk(mode: ModeDef): boolean {
+  return (
+    meetsContrast(mode.colors.text, mode.colors.bg, 4.5) &&
+    meetsContrast(mode.colors.text, mode.colors.panel, 4.5)
+  );
 }

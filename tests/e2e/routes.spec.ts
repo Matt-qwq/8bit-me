@@ -1,4 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mockWeather } from './helpers/mock-weather';
+
+// 「窗外」世界会拉 Open-Meteo（主站唯一运行时外部请求）：e2e 一律拦截为 mock，
+// 保证离线可跑且不产生 resource error 污染「零报错」断言。
+test.beforeEach(async ({ page }) => {
+  await mockWeather(page);
+});
 
 /**
  * 冒烟断言：页面渲染 + 控制台零 error / 零 pageerror
@@ -70,7 +77,7 @@ test('文章页头部：封面与标题横向并排且间距 > 0（死规则回�
   // 2026-09 作者反馈「标题跟封面挨太近」：.head .cover-block 的 margin-bottom
   // 因 Astro scoped 规则打不进 CoverBlock 子组件而从不生效（间隙实测 0px），
   // 全站文章共用模板全部受影响。修复后头部为 flex：封面左、标题/meta 右。
-  await page.goto('/blog/2026-08-29-data-pipeline-engineering', {
+  await page.goto('/blog/2026-08-31-anti-scraping-risk-control', {
     waitUntil: 'load',
   });
   const box = await page.evaluate(() => {

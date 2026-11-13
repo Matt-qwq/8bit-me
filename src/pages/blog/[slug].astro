@@ -4,6 +4,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import CoverBlock from '../../components/CoverBlock.astro';
 import { getPublishedPosts, formatDate, type Post } from '../../lib/posts';
 import { siteConfig, url } from '../../lib/config';
+import { buildToc } from '../../lib/toc';
 
 export async function getStaticPaths() {
   const posts = await getPublishedPosts();
@@ -19,18 +20,20 @@ interface Props {
 
 const { post } = Astro.props;
 const { Content } = await render(post);
+/** 文章目录（D3）：≥3 个 h2 才出（短文加目录是噪声），id 与正文标题同源 */
+const toc = buildToc(post.body ?? '');
 
 const title = `${post.data.title} | ${siteConfig.title}`;
 ---
 
 <BaseLayout title={title} description={post.data.description}>
-  <article class="container post">
+  <article class="container container--prose post">
     <p>
       <a class="back text-pixel" href={url('blog')} data-sfx-role="nav">← BACK</a>
     </p>
 
     <header class="head">
-      {post.data.cover && <CoverBlock cover={post.data.cover} size="lg" />}
+      <CoverBlock cover={post.data.cover} seed={post.id} size="lg" />
       <div class="head-main">
         <h1>{post.data.title}</h1>
         <p class="meta">
@@ -47,12 +50,27 @@ const title = `${post.data.title} | ${siteConfig.title}`;
       </div>
     </header>
 
+    {
+      toc.length > 0 && (
+        <nav class="toc" aria-label="本文目录">
+          <p class="toc-title text-pixel">CONTENTS</p>
+          <ol>
+            {toc.map((item) => (
+              <li>
+                <a href={`#${item.id}`}>{item.text}</a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )
+    }
+
     <div class="prose pixel-panel">
-      <span class="pp-pad tl" aria-hidden="true"></span>
-      <span class="pp-pad tr" aria-hidden="true"></span>
-      <span class="pp-pad bl" aria-hidden="true"></span>
-      <span class="pp-pad br" aria-hidden="true"></span>
-      <Content />
+      <div class="prose-body">
+        {/* 图（逻辑图 / 流程图）现在是正文的一部分：markdown 里的 ```flow 围栏，
+            跟着论述走——不再是顶在文首的 SVG（见 ADR-0019）。 */}
+        <Content />
+      </div>
     </div>
   </article>
 </BaseLayout>
@@ -62,13 +80,72 @@ const title = `${post.data.title} | ${siteConfig.title}`;
     padding-top: 2rem;
   }
 
-  .back {
-    font-size: 0.6rem;
-    color: var(--gb-2);
+  /* 文章目录（D3）：与正文同一套面板语言（1px 结构线、无底色），
+     放在正文之前、不吸顶——长文才需要它，短文根本不出（buildToc 的门槛）。 */
+  .toc {
+    margin: 1.75rem 0 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--c-line);
+  }
+  .toc-title {
+    /* 8px（4px 阶整数）：0.6rem = 9.6px 会让整篇正文的行盒 top 全部带 .6 小数，
+       踩过 type-geometry「行盒 top 落整数像素」那条守卫。 */
+    margin: 0 0 8px;
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    color: var(--color-text-dim);
+  }
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    counter-reset: toc;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  /* 不加自动编号：本站长文的 h2 自带「一、二、」中文序号，
+     再叠一层 01/02 会读成「01 一、…」。目录只负责跳转，不负责排序。 */
+  .toc li {
+    font-size: 0.875rem;
+    line-height: 22px;
+    padding-left: 0.9rem;
+    position: relative;
+  }
+  .toc li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.72em;
+    width: 6px;
+    height: 1px;
+    background-color: var(--c-accent);
+  }
+  .toc a {
+    color: var(--color-text);
   }
 
-  .back:hover {
-    color: var(--gb-3);
+  .back {
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    /* 结构色（accent 作文字在 dawnbringer-ember 3.43 破 AA） */
+    color: var(--color-text-dim);
+  }
+
+  /* 2026-10-29：同 .view-link —— 导航链接必须有链接的样子，不是一行灰字。 */
+  .back {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--c-accent) 55%, transparent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+
+  .back:hover,
+  .back:focus-visible {
+    color: var(--c-text);
+    text-decoration-color: var(--c-accent);
   }
 
   .head {
@@ -88,7 +165,11 @@ const title = `${post.data.title} | ${siteConfig.title}`;
   }
 
   .head h1 {
-    font-size: 1.15rem;
+    /* 文章标题：原 1.125rem(18px) 比 prose h2(20px) 还小——层级倒挂（调研 B3 的 h1 18px 与 h2 20px 本身就矛盾）。
+       改为 20px：全页最大，h2 18 / h3 16 逐级递减。 */
+    font-size: 1.25rem; /* 20px */
+    letter-spacing: var(--ls-20);
+    line-height: 28px;
   }
 
   @media (max-width: 560px) {
@@ -104,51 +185,115 @@ const title = `${post.data.title} | ${siteConfig.title}`;
     align-items: center;
     gap: 0.6rem;
     font-family: var(--font-mono);
-    font-size: 0.8rem;
-    color: var(--gb-2);
+    font-size: 0.75rem;
+    letter-spacing: normal;
+    line-height: 16px;
+    /* 日期/标签行：结构色（accent 作文字在 dawnbringer-ember 2.10 破 AA） */
+    color: var(--color-text-dim);
   }
 
   .meta .sep {
-    color: var(--gb-1);
+    color: var(--c-line);
   }
 
-  /* 文章正文排版 */
+  /* 文章正文排版。标题尺度按作者 2026-09-08 反馈下调一档：
+     h2 20→18px、h3 18→16px（原比正文 16px 大一档半，Zpix 字宽下显得很大）。
+     h3 与正文同为 16px，故用 font-weight 700 区分（Zpix 无真粗体，走浏览器合成；
+     若观感发糊，备选是给 h3 加 2px --c-accent 左走线标记）。 */
   .prose :global(h2) {
-    font-size: 0.95rem;
+    font-size: 1.125rem; /* 18px */
+    letter-spacing: var(--ls-18);
+    line-height: 24px;
     margin-block: 2rem 0.75rem;
   }
 
   .prose :global(h3) {
-    font-size: 0.8rem;
+    font-size: 1rem; /* 16px（与正文同档，靠字重区分） */
+    letter-spacing: var(--ls-16);
+    line-height: 24px;
+    font-weight: 700;
+    margin: 1.5rem 0 0.5rem;
   }
 
   .prose :global(p) {
     color: var(--color-text);
   }
 
+  /* 加粗：Zpix 只有 400 字重，显式声明 700 走浏览器合成（本阶段选调研 A2.5 选项 1，
+     不做像素高亮；写作层加粗密度另行收敛）。 */
+  .prose :global(strong) {
+    font-weight: 700;
+  }
+
+  /* 列表项间距：16px 档下 0.5em = 8px（4px 阶），2~3 行项不再首尾相接成块 */
+  .prose :global(li + li) {
+    margin-top: 0.5em;
+  }
+
   .prose :global(code) {
     font-family: var(--font-mono);
-    font-size: 0.85em;
-    background-color: color-mix(in srgb, var(--gb-1) 40%, var(--gb-0));
+    font-size: 0.875em; /* 16px 正文 → 14px */
+    letter-spacing: normal;
+    background-color: color-mix(in srgb, var(--c-line) 40%, var(--c-bg));
     padding: 0.1em 0.35em;
   }
 
   .prose :global(pre) {
-    border: 3px solid var(--gb-1);
-    background-color: color-mix(in srgb, var(--gb-1) 35%, var(--gb-0));
+    border: 1px solid var(--c-line);
+    background-color: color-mix(in srgb, var(--c-line) 35%, var(--c-bg));
     padding: 1rem;
     overflow-x: auto;
   }
 
   .prose :global(pre code) {
+    font-size: 0.875rem; /* 14px 整数档 */
+    letter-spacing: normal;
+    line-height: 20px; /* 4px 阶，代码块行距不再随正文起伏 */
     background: none;
     padding: 0;
+  }
+
+  /* 「逻辑图 / 流程图」代码块（```flow 围栏）—— markdown 直接渲染的字符图。
+     为何能精确对齐：Zpix 里制表符（─│┌┐└┘├┤┼▼▲→）与汉字同为 13/12 em 全角格，
+     U+3000 全角空格同宽，所以只要「参与对齐的字符全角」，栅格就是整数格；
+     ASCII 是 7/12 em 半宽，只能出现在不参与右对齐的行（写作侧纪律，单测守着）。
+     为何 12px：Zpix 的设计网格就是 12px（前进量 13px 整数，笔画最锐）。
+     为何行高 20px（不是 1em、也不是小标签的 16px）：**行高决定可读性**。Zpix 汉字墨高
+     0.9167 em（12px 字号 → 11px），两种错误都踩过：
+       · 行高 1em（12px）→ 行间墨隙 1px，字与行贴死（2026-09-11 作者：「字都粘一起了」）；
+       · 行高 16px（12px 字号在全局排版档位里的配对）→ 墨隙 5px，作者仍判「行间距近乎贴一起」；
+         根因是那个 16px 配对服务于**小标签 / 丝印**，而字符图是**连续阅读块**，该照正文标准。
+     正文标准 = 16px 字号配 28px 行高（1.75 倍）→ 12px 字号对应 21px；取 4px 阶的 **20px**
+     （1.67 倍）。实测三档 16/20/24px：20px 最合「步骤 + 说明 + ↓纪律」的分组读感
+     （24px 会把三行拉散，16px 偏紧）。
+     代价：制表符竖线（│）不能用 —— 它墨高满格，要连续就必须行高 ≤ 墨高，与行距要求互斥；
+     故图里改用不依赖连续的箭头（↓ → ▼）。
+     度量守线：`tests/unit/flow-diagram.spec.ts`（字体度量，行间墨隙 ≥ 8px）
+     + `tests/e2e/flow-diagram.spec.ts`（canvas 像素扫描真实墨迹 + 常驻反例自检）。
+     为何不必 !important：图走 `excludeLangs: ['flow']`（见 astro.config.mjs），根本不进 Shiki，
+     也就没有 github-dark 的 inline 样式（其它代码块仍由 Shiki 上色）。
+     为何选择器用 :has()：Sätteri 把围栏语言放在 `<code class="language-flow">` 上，
+     `<pre>` 自己没有类（实测产物 `<pre><code class="language-flow">`），只能从子元素反选父面板。 */
+  .prose :global(pre:has(> code.language-flow)) {
+    font-family: var(--font-pixel);
+    font-size: 0.75rem; /* 12px：Zpix 原生网格 */
+    line-height: 20px; /* 连续阅读块的行距 1.67 倍：1em 只剩 1px 墨隙，16px 仍偏紧 */
+    letter-spacing: var(--ls-12);
+    color: var(--c-text);
+    background-color: color-mix(in srgb, var(--c-line) 25%, var(--c-bg));
+  }
+
+  .prose :global(pre:has(> code.language-flow) > code) {
+    font-family: var(--font-pixel);
+    font-size: 0.75rem;
+    line-height: 20px;
+    letter-spacing: var(--ls-12);
   }
 
   .prose :global(blockquote) {
     margin: 1rem 0;
     padding-left: 1rem;
-    border-left: 4px solid var(--gb-2);
+    border-left: 2px solid var(--c-accent);
     color: var(--color-text-dim);
   }
 
@@ -159,7 +304,7 @@ const title = `${post.data.title} | ${siteConfig.title}`;
 
   .prose :global(hr) {
     border: none;
-    border-top: 4px solid var(--gb-1);
+    border-top: 1px solid var(--c-line);
     margin: 2rem auto;
     width: 6rem;
   }

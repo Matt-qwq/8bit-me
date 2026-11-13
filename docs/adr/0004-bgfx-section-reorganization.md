@@ -100,3 +100,12 @@
 - 方向 (b) CursorFx `data-cursor-text` 悬停标签：未做，可后续独立小特性。
 - 方向 (c) 调研整理进 docs：kavindu 拆解已在本仓库 handoff/调研文档，未重复搬运。
 - 引入真 3D / WebGL：明确否决（违反栈与铁律）。
+
+## 附录（2026-10-29）：所引外部 skill 已合并迁移
+
+本文正文引用的 `styleseed` / `animation-principles` / `ap-motion-vocab` 三份外部 skill，已于
+2026-10-29 合并为单一全局 skill `webdesign`（`~/.pi/agent/skills/webdesign/`，方法论见其
+`references/motion.md`、`references/a11y.md`、`references/tokens.md`）。原 28 份 SKILL.md 归档于
+`~/.skills-archive/20261029-1448-webdesign-merge/`。**正文是当时的决策记录，不改写**；本站的运动
+词汇事实源改为 `docs/specs/motion-vocab.md`，本文引用的「Cinematic tier」「一个产品一个种子」
+等概念在合并后的 skill 中继续有效（见其 surface tier 表与种子表）。

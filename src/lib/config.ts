@@ -16,7 +16,7 @@ export interface SocialLink {
  */
 export const siteConfig = {
   title: '8bit-me',
-  tagline: '把乱摊子收敛成体系',
+  tagline: '自动化与数据工程的实践记录',
   description:
     '8bit-me —— Matt 的工程化方法论作品集：AI 辅助的 RPA 迁移 / Python 数据管道 / 黑盒逆向实战，配一个纯像素 8-bit 实验场。',
   author: 'Matt',
@@ -34,7 +34,7 @@ export const siteConfig = {
 
   /** 首页五个 section 的锚点导航 */
   nav: [
-    { label: '首页', href: '#hero' },
+    { label: '首页', href: '#window' },
     { label: '关于', href: '#about' },
     { label: '作品', href: '#projects' },
     { label: '技能', href: '#skills' },
@@ -53,9 +53,9 @@ export const siteConfig = {
     {
       name: '数据管道平台',
       description:
-        '跨多个投放平台的数据抓取分析体系：配置驱动注册表 + 统一浏览器引擎（五条取数路径）+ 三层风控与节奏控制 + 只增不改的分层数仓（DuckDB）。',
-      tags: ['Python', '反爬', 'DuckDB', '数据管道'],
-      url: '/blog/2026-08-29-data-pipeline-engineering',
+        '跨投放平台数据管道的核心防线：三层风控把「像人」拆成身份、行为、算法三层攻防，只增不改的分层数仓守住数据可信。取数与节奏等环节的深度拆解见博客数据管道系列。',
+      tags: ['Python', '反爬', '风控', '数据管道'],
+      url: '/blog/2026-08-31-anti-scraping-risk-control',
     },
     {
       name: '黑盒逆向工具链',
@@ -104,3 +104,17 @@ export const siteConfig = {
 /** base 感知路径：兼容 GitHub Pages 子路径部署（astro.config 的 base） */
 export const base = import.meta.env.BASE_URL;
 export const url = (path: string) => `${base}${path.replace(/^\/+/, '')}`;
+
+/**
+ * 「窗外」世界的天气城市（ADR-0020）：全世界访客看到的都是**作者窗外**。
+ * 广州塔（海珠区，珠江南岸）坐标；搬家改这一处即可。
+ * - timezone: 'auto' = Open-Meteo 按坐标自动判时区（API 参数）
+ * - tz: hero 实况读数行显示用的 IANA 时区
+ */
+export const siteWeather = {
+  lat: 23.1066,
+  lon: 113.3245,
+  label: 'GUANGZHOU',
+  timezone: 'auto',
+  tz: 'Asia/Shanghai',
+} as const;

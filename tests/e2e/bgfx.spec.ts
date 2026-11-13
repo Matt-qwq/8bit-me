@@ -1,9 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mockWeather } from './helpers/mock-weather';
+
+// 天气请求（Open-Meteo）一律 mock：离线可跑 + 零 resource error
+test.beforeEach(async ({ page }) => {
+  await mockWeather(page);
+});
 
 /**
  * bg-fx 自证矩阵（轨道 A，方案 §5 精神扩展）：
  * - 3 视口 × 4 路由：canvas 存在、已绘制非空白（getImageData 采样去重计数 ≥ 4）、零 console error
- * - 浅色主题抽查：additive 门控退回 source-over 不崩溃、仍出像素
+ * - 恒暗单档抽查：additive 门控不崩溃、仍出像素
  * - prefers-reduced-motion 抽查：半速降频不冻结、仍出像素、零报错
  * 注意：抓的是 canvas 元素本身（clearRect 后透明底 + additive 辉光合成），
  * 非页面合成截图——scrim 是否遮蔽不在此断言范围（由 DOM 断言 + 作者视觉验收覆盖）。
@@ -50,10 +56,10 @@ async function sampleCanvas(page: Page) {
 }
 
 async function openAndCheckCanvas(page: Page, path: string) {
-  // v6：默认 off（背景退场），canvas 断言需显式切 core
+  // 显式落 world，保证矩阵各视口/路由行为确定（默认即 world；core 已退役，脏存档会被归一）
   await page.addInitScript(() => {
     try {
-      localStorage.setItem('8bitme:bgfx', 'core');
+      localStorage.setItem('8bitme:bgfx', 'world');
     } catch {
       /* ignore */
     }
@@ -72,41 +78,38 @@ async function openAndCheckCanvas(page: Page, path: string) {
 
   const sample = await sampleCanvas(page);
   expect(sample.found, `${path} 存在 bgfx canvas`).toBe(true);
-  // 星空稀疏：断言「确实画了足够像素」而非「颜色足够多」——个位数颜色即证明引擎在画
-  expect(sample.drawn, `${path} canvas 已绘制非空白（drawn≥30）`).toBeGreaterThanOrEqual(30);
-  expect(sample.distinct, `${path} 至少两色（accent/light 层）`).toBeGreaterThanOrEqual(2);
+  if (path === '/') {
+    // 首页首屏 = 世界唯一在场地：星空稀疏，断言「确实画了足够像素」而非颜色数
+    expect(sample.drawn, `${path} canvas 已绘制非空白（drawn≥30）`).toBeGreaterThanOrEqual(30);
+    expect(sample.distinct, `${path} 至少两色（天空/山/水层）`).toBeGreaterThanOrEqual(2);
+  } else {
+    // 内页按设计是**空画布**：世界只住首页 hero（滚动即淡出，见 drawWorld 的 worldAlpha）。
+    // core 时代这些路由有走线可画；模式退役后「空」才是正确行为——判据从「非空白」改成
+    // 「零报错 + 确认没有悄悄画东西」（天气 mock 为晴，无粒子）。
+    expect(sample.drawn, `${path} 内页画布应为空（世界只在首页 hero）`).toBe(0);
+  }
 }
 
 for (const vp of VIEWPORTS) {
   test.describe(`bg-fx 矩阵 @${vp.name}`, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
     for (const route of ROUTES) {
-      test(`${route.name} ${route.path} canvas 非空白且零报错`, async ({ page }) => {
+      test(`${route.name} ${route.path} 零报错（首页有世界 / 内页按设计为空）`, async ({ page }) => {
         await openAndCheckCanvas(page, route.path);
       });
     }
   });
 }
 
-test('bg-fx 浅色主题（nes-punch）：source-over 门控不崩溃、仍出像素', async ({ page }) => {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('8bitme:theme', 'nes-punch');
-    } catch {
-      /* storage unavailable */
-    }
-  });
-  await openAndCheckCanvas(page, '/');
-});
-
 test('bg-fx prefers-reduced-motion：半速降频不冻结、仍出像素、零报错', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await openAndCheckCanvas(page, '/blog');
+  // 必须挑首页：只有那里有世界可画（降频的判据是「仍出像素」）
+  await openAndCheckCanvas(page, '/');
 });
 
-test('bg-fx 默认退场：canvas 与 scrim 均隐藏（v6 电路化语义）', async ({ page }) => {
+test('bg-fx 默认开机（world「窗外」）：canvas 与 scrim 可见', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
@@ -120,33 +123,52 @@ test('bg-fx 默认退场：canvas 与 scrim 均隐藏（v6 电路化语义）', 
     return { canvasHidden: c ? c.hidden : null, scrimHidden: s ? s.hidden : null };
   });
   expect(errors).toEqual([]);
-  expect(state.canvasHidden, '默认 off → canvas 隐藏').toBe(true);
-  expect(state.scrimHidden, '默认 off → scrim 隐藏（不染暗页面）').toBe(true);
+  expect(state.canvasHidden, '默认 world → canvas 可见').not.toBe(true);
+  expect(state.scrimHidden, '默认 world → scrim 在（压暗玻璃层）').not.toBe(true);
+});
+
+test('bg-fx 偏好 off 仍可退场：显式 off → canvas 与 scrim 隐藏', async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('8bitme:bgfx', 'off');
+    } catch {
+      /* ignore */
+    }
+  });
+  await page.goto('/', { waitUntil: 'load' });
+  await page.waitForTimeout(200);
+  const state = await page.evaluate(() => {
+    const c = document.getElementById('bgfx-canvas') as HTMLCanvasElement | null;
+    const s = document.querySelector('.bgfx-scrim') as HTMLElement | null;
+    return { canvasHidden: c ? c.hidden : null, scrimHidden: s ? s.hidden : null };
+  });
+  expect(state.canvasHidden, '偏好 off → canvas 隐藏').toBe(true);
+  expect(state.scrimHidden, '偏好 off → scrim 隐藏').toBe(true);
 });
 
 test('bg-fx 滚动视差接线：滚动后 canvas 仍持续绘制（非空白）', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => {
     try {
-      localStorage.setItem('8bitme:bgfx', 'core');
+      localStorage.setItem('8bitme:bgfx', 'world');
     } catch {
       /* ignore */
     }
   });
-  await page.goto('/blog', { waitUntil: 'load' });
+  await page.goto('/', { waitUntil: 'load' });
   await page.waitForTimeout(150);
-  // 制造长滚动（文章列表页足够高）
-  await page.evaluate(() => window.scrollTo(0, 400));
+  // 首屏内滚动（世界只住 hero；滚太远 worldAlpha 归零就不是「视差接线」了）
+  await page.evaluate(() => window.scrollTo(0, 200));
   await page.waitForTimeout(150);
   const sample = await sampleCanvas(page);
   expect(sample.drawn).toBeGreaterThanOrEqual(30);
 });
 
-test('bg-fx scrim 几何（core 下）：长页面首屏以下仍全覆盖（body 定位祖先，锚页尾）', async ({ page }) => {
+test('bg-fx scrim 几何：长页面首屏以下仍全覆盖（body 定位祖先，锚页尾）', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => {
     try {
-      localStorage.setItem('8bitme:bgfx', 'core');
+      localStorage.setItem('8bitme:bgfx', 'world');
     } catch {
       /* ignore */
     }
@@ -164,48 +186,13 @@ test('bg-fx scrim 几何（core 下）：长页面首屏以下仍全覆盖（bod
   expect(cover, '滚动 1200px 后 scrim 仍覆盖整个视口').toBe(true);
 });
 
-test('bg-fx section 重组（ADR-0004）：滚动穿越 5 section 后基础态切换、canvas 仍绘制、零报错', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  const errors: string[] = [];
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
-  });
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('8bitme:bgfx', 'core');
-    } catch {
-      /* ignore */
-    }
-  });
-  await page.goto('/', { waitUntil: 'load' });
-  await page.waitForTimeout(200);
-
-  const sections = ['hero', 'about', 'projects', 'skills', 'contact'];
-  const seen = new Set<string>();
-  for (const id of sections) {
-    await page.evaluate((sid) => {
-      const el = document.getElementById(sid);
-      if (el) el.scrollIntoView({ block: 'center' });
-    }, id);
-    // 等 IntersectionObserver + 错峰 tween 推进落定
-    await page.waitForTimeout(400);
-    const dbg = await page.evaluate(() => {
-      const c = document.getElementById('bgfx-canvas') as HTMLCanvasElement;
-      const ctx = c.getContext('2d')!;
-      const data = ctx.getImageData(0, 0, c.width, c.height).data;
-      let drawn = 0;
-      for (let i = 0; i < data.length; i += 4) if (data[i + 3] !== 0) drawn++;
-      const d = (window as unknown as { __bgfxDebug?: { section?: string; cam?: number } })
-        .__bgfxDebug;
-      return { section: d?.section, cam: d?.cam, drawn };
-    });
-    seen.add(dbg.section ?? '');
-    expect(dbg.drawn, `section ${id}：canvas 仍绘制非空白`).toBeGreaterThanOrEqual(30);
-  }
-  expect(errors, '穿越 section 全程控制台零 JS 报错').toEqual([]);
-  // 基础态确随滚动切换（至少命中多个不同 section 态）
-  expect(seen.size, `重组基础态随 section 切换（命中 ${seen.size} 种）`).toBeGreaterThanOrEqual(3);
-});
+/**
+ * 2026-09-25 退役（作者：「core 退役换成 world 背景」）：
+ *   · 「section 重组（ADR-0004）」用例 —— 机箱 core 的 5 种机器态已随模式一起删除，
+ *     该用例量的 `__bgfxDebug.section/cam` 不复存在（不是改成 world 能守的东西：
+ *     world 不按 section 重组）。
+ *   · 「单档（恒暗）canvas 阶跃」用例 —— 它的判据主体是 **core 走线**引起的局部亮度
+ *     阶跃（阈值 0.13）。world 的天空是整片色带（阶跃极大），换到 world 只会把判据
+ *     变成「天空不许有色带」，与设计矛盾；故连判据一起退役，不留空心断言。
+ * 若日后重做「背景亮度纪律」，请针对 world 的**新口径**重写判据，不要复活这两条。
+ */

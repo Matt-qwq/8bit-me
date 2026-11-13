@@ -55,21 +55,101 @@ test('首页：导航锚点点击后目标 section 真的进入视口', async ({
   await expect(page.locator('#about')).toBeInViewport();
 });
 
-test('首页：#hero 与 #main 停靠位一致（hero 顶贴视口顶，不落在 nav 下方）', async ({
+test('首页：「首页」导航（#window）点击后从别章回到首屏', async ({ page }) => {
+  // ADR-0027：导航「首页」锚点从 #hero 改成 #window（首屏那扇窗）。
+  // 先滚到 #about，再点「首页」——停在首屏时点它无位移，断言会假绿。
+  await page.goto('/', { waitUntil: 'load' });
+  await page.click('.nav a[href="#about"]');
+  await expect(page.locator('#about')).toBeInViewport();
+  await page.click('.nav a[href="#window"]');
+  await expect(page.locator('#window')).toBeInViewport();
+});
+
+test('首页：三个停靠入口各自顶贴视口顶（#window / #main / #hero，含第二章）', async ({
   page,
 }) => {
   // 2026-09 作者反馈：#hero 有 scroll-margin-top 落 scrollY=0、#main 无则落 60，
-  // 同内容两个位。修复后所有入口应同一点：hero 顶贴视口顶（=wheel 翻页/自然加载）。
-  const heroTopAfterNav = async (url: string) => {
+  // 同内容两个位。修复后所有入口应同一点：目标元素顶贴视口顶。
+  // ADR-0027 后首屏是 #window（#main 的第一个孩子），#hero 是第二章——
+  // 三个锚点各自的停靠位都必须是 0（scroll-margin-top: 0）。
+  const topAfterNav = async (url: string, sel: string) => {
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForTimeout(600); // 等 smooth scroll 落定
-    return page.$eval('#hero', (el) => Math.round(el.getBoundingClientRect().top));
+    return page.$eval(sel, (el) => Math.round(el.getBoundingClientRect().top));
   };
   // 顺序执行：同一 page 对象上并发 goto 会互相中止（net::ERR_ABORTED）
-  const heroTopViaHero = await heroTopAfterNav('/#hero');
-  const heroTopViaMain = await heroTopAfterNav('/#main');
-  expect(heroTopViaHero).toBe(0);
-  expect(heroTopViaMain).toBe(0);
+  expect(await topAfterNav('/#window', '#window')).toBe(0);
+  expect(await topAfterNav('/#main', '#main')).toBe(0);
+  expect(await topAfterNav('/#hero', '#hero')).toBe(0);
+});
+
+/**
+ * ADR-0027 结构契约：首屏是一整扇窗。
+ * 窗是「世界只住这一屏」的锚点，被 BgFx 的 worldAlpha 门 / scrim 顶边 /
+ * 章节转场第 0 章三处消费——它挂错页、或不在第一个，三处一起漂。
+ */
+test('结构：首页章节序 = window→hero→about→projects→skills→contact（#window 只挂首页）', async ({
+  page,
+}) => {
+  await page.goto('/', { waitUntil: 'load' });
+  const ids = await page.$$eval('main#main > section[id]', (els) =>
+    els.map((e) => e.id)
+  );
+  expect(ids, '首页六章顺序被改（#window 必须第一、#hero 第二）').toEqual([
+    'window',
+    'hero',
+    'about',
+    'projects',
+    'skills',
+    'contact',
+  ]);
+  // 内页不得有 #window（否则 worldAlpha 门/scrim 会在内页也生效）
+  for (const route of ['/blog', '/blog/2026-08-27-8bit-me-v2-refactor-notes']) {
+    await page.goto(route, { waitUntil: 'load' });
+    expect(
+      await page.locator('#window').count(),
+      `${route} 不该有 #window（它只属于一镜到底的首页）`
+    ).toBe(0);
+  }
+});
+
+test('结构：首屏没有任何文字（窗是纯 canvas，文字全在第二章）', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/', { waitUntil: 'load' });
+  await page.waitForTimeout(600);
+  const r = await page.evaluate(() => {
+    const win = document.getElementById('window')!;
+    // ① 窗 section 自身：零文本节点、零元素子节点（窗/景/天气全由 BgFx 画）
+    const walk = document.createTreeWalker(win, NodeFilter.SHOW_TEXT);
+    const own: string[] = [];
+    let n: Node | null;
+    while ((n = walk.nextNode())) {
+      const t = (n.textContent ?? '').trim();
+      if (t) own.push(t);
+    }
+    // ② 首屏视口内不许出现任何可见文字节点（nav 是站点框架，除外）
+    const vh = window.innerHeight;
+    const offenders: string[] = [];
+    for (const el of document.querySelectorAll('body *')) {
+      if (el.closest('header.nav') || el.closest('.section-fx')) continue;
+      const text = [...el.childNodes]
+        .filter((c) => c.nodeType === Node.TEXT_NODE)
+        .map((c) => (c.textContent ?? '').trim())
+        .join(' ');
+      if (!text) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05)
+        continue;
+      const b = el.getBoundingClientRect();
+      if (b.bottom > 0 && b.top < vh)
+        offenders.push(`${el.tagName}.${el.className}: ${text.slice(0, 24)}`);
+    }
+    return { text: win.textContent?.trim() ?? '', children: win.children.length, own, offenders };
+  });
+  expect(r.text, '#window 的 textContent 必须为空').toBe('');
+  expect(r.children, '#window 不该有元素子节点（窗无 DOM 内容）').toBe(0);
+  expect(r.own, '#window 内部不该有文本节点').toEqual([]);
+  expect(r.offenders, `首屏视口内出现可见文字：${r.offenders.join(' | ')}`).toEqual([]);
 });
 
 test('跨页锚点：博客页点「关于」→ 跳回首页并定位到 #about', async ({

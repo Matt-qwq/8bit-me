@@ -23,8 +23,8 @@ export function setSfxEnabled(on: boolean): void {
   sfxPref.set(on);
 }
 
-/** 音效角色：六类各一个专属音效（术语见 CONTEXT.md「sound role」） */
-export type SfxRole = 'nav' | 'click' | 'toggle' | 'select' | 'game' | 'hover';
+/** 音效角色：五类各一个专属音效（select 随 13 套主题面板退役，ADR-0021） */
+export type SfxRole = 'nav' | 'click' | 'toggle' | 'game' | 'hover';
 
 /** 合成波形；'noise' 为噪声打击（AudioBuffer 白噪短爆，非 OscillatorType 原生） */
 export type SfxWave = 'square' | 'triangle' | 'sawtooth' | 'sine' | 'noise';
@@ -71,15 +71,6 @@ export const SOUND_ROLES: Record<SfxRole, SoundSpec> = {
     nodes: [
       { wave: 'square', freq: 660, dur: 0.05, vol: 0.04 },
       { wave: 'square', freq: 440, dur: 0.06, vol: 0.04, delay: 0.06 },
-    ],
-    fx: 'click',
-  },
-  select: {
-    // 主题选择：上行三连 arp（C5-E5-G5）
-    nodes: [
-      { wave: 'square', freq: 523, dur: 0.06, vol: 0.035 },
-      { wave: 'square', freq: 659, dur: 0.06, vol: 0.035, delay: 0.07 },
-      { wave: 'square', freq: 784, dur: 0.09, vol: 0.05, delay: 0.14 },
     ],
     fx: 'click',
   },

@@ -37,8 +37,6 @@ export function createTogglePref(
   };
 }
 
-/** CRT overlay 开关（默认开） */
-export const crtPref = createTogglePref('8bitme:crt');
 
 /** 自定义光标形态（'8bitme:cursor'）：off | reticle | frame | dot | block | cross
  * - get：读取当前形态（无记录 → null；读取失败静默）
@@ -65,33 +63,10 @@ export const cursorPref = {
 /** chip-tune SFX 开关（默认开，尊重用户偏好） */
 export const sfxPref = createTogglePref('8bitme:sfx');
 
-/** 主题偏好（13 套主题，localStorage 持久化）
- * - get：读取当前主题 key（无记录 → null；读取失败静默）
- * - set：持久化主题 key（失败静默）
- * 值合法性（是否 13 套之一）由 themes.ts 的 isValidTheme 负责 */
-export const themePref = {
-  /** localStorage 键名（head 预挂载脚本与 ThemeToggle 共用） */
-  key: '8bitme:theme',
-  get(): string | null {
-    try {
-      return localStorage.getItem(themePref.key);
-    } catch {
-      return null;
-    }
-  },
-  set(key: string): void {
-    try {
-      localStorage.setItem(themePref.key, key);
-    } catch {
-      /* storage unavailable — ignore */
-    }
-  },
-};
-
-/** bg-fx 画布动画模式（'8bitme:bgfx'）：off | stars | scan | rain
+/** bg-fx 画布动画模式（'8bitme:bgfx'）：off | world（ADR-0020 三档，2026-09-25 core 退役→双档）
  * - get：读取当前模式（无记录 → null；读取失败静默）
  * - set：持久化模式（失败静默）
- * 值合法性（是否四模式之一）由 BgFx 组件的 MODES 白名单负责 */
+ * 值合法性与旧档归一（v4 五滤镜 / 已退役的 core → world）由 BgFx / SideDock 的 normalize 负责 */
 export const bgfxPref = {
   key: '8bitme:bgfx',
   get(): string | null {

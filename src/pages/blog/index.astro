@@ -7,38 +7,74 @@ import { siteConfig, url } from '../../lib/config';
 const posts = await getPublishedPosts();
 const title = `博客 | ${siteConfig.title}`;
 const description = '文章列表：工程笔记（engineering notes）与项目解说（project walkthrough），按日期倒序。';
+
+/**
+ * 列表项视图数据：日期拆成「年 / 月-日」两行丝印，日期不再进卡片。
+ * date 由 z.coerce.date() 按 UTC 解析，故一律取 UTC 部分（同 formatDate）。
+ */
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const items = posts.map((post) => ({
+  post,
+  href: url(`blog/${post.id}`),
+  year: post.data.date.getUTCFullYear(),
+  monthDay: `${pad2(post.data.date.getUTCMonth() + 1)}-${pad2(post.data.date.getUTCDate())}`,
+  iso: formatDate(post.data.date),
+}));
 ---
 
 <BaseLayout title={title} description={description}>
   <div class="container">
-    <h2 class="section-title">
+    <h1 class="section-title">
       <span class="num text-pixel">B</span><span class="text-pixel">BLOG</span> 文章列表
-    </h2>
+    </h1>
+
+    {/* P2-3 第二种视图入口：按标签浏览（纯静态路由，零 JS） */}
+    <nav class="view-switch">
+      <a class="view-link text-pixel" href={url('blog/tags/')} data-sfx-role="nav" data-sfx-hover>
+        按标签浏览 &rarr;
+      </a>
+    </nav>
 
     {
-      posts.length === 0 ? (
+      items.length === 0 ? (
         <p class="text-dim">暂无文章，敬请期待。</p>
       ) : (
-        <ul class="posts">
-          {posts.map((post) => (
-            <li class="pixel-panel card">
-              <CoverBlock cover={post.data.cover} href={url(`blog/${post.id}`)} showTag />
-              <div class="body">
-                <h3>
-                  <a href={url(`blog/${post.id}`)} data-sfx-role="nav">{post.data.title}</a>
-                </h3>
-                <p class="meta">
-                  <time datetime={post.data.date.toISOString()}>
-                    {formatDate(post.data.date)}
-                  </time>
-                </p>
-                <p class="desc">{post.data.description}</p>
-                <p class="tags">
-                  {post.data.tags.map((tag) => (
-                    <span class="tag text-pixel">{tag}</span>
-                  ))}
-                </p>
+        <ul class="timeline">
+          {items.map((it, i) => (
+            <li class="tl-item" data-idx={i}>
+              <div class="tl-mark">
+                <span class="tl-year text-pixel">{it.year}</span>
+                <time class="tl-date text-pixel" datetime={it.iso}>
+                  {it.monthDay}
+                </time>
               </div>
+              <div class="tl-link" aria-hidden="true">
+                <span class="tl-pad"></span>
+                <span class="tl-branch"></span>
+                <span class="tl-dot"></span>
+              </div>
+              <article class="pixel-panel card">
+                {/* 不传 showTag：像素图铺满 6rem 铭牌，与单篇 .lg 档同尺寸（88px 图案），
+                    兑现「点过的图在目的地同尺寸再现」；COVER 丝印会占掉 24px 使图案缩到 64px。 */}
+                <CoverBlock
+                  cover={it.post.data.cover}
+                  seed={it.post.id}
+                  href={it.href}
+                />
+                <div class="body">
+                  <h3>
+                    <a href={it.href} data-sfx-role="nav" data-sfx-hover>
+                      {it.post.data.title}
+                    </a>
+                  </h3>
+                  <p class="desc">{it.post.data.description}</p>
+                  <p class="tags">
+                    {it.post.data.tags.map((tag) => (
+                      <span class="tag text-pixel">{tag}</span>
+                    ))}
+                  </p>
+                </div>
+              </article>
             </li>
           ))}
         </ul>
@@ -47,41 +83,306 @@ const description = '文章列表：工程笔记（engineering notes）与项目
   </div>
 </BaseLayout>
 
+<script>
+  /**
+   * 时间线读数（scrollspy）：视口中心那一篇 → .is-live（焊盘填实 + 走线加粗）。
+   * 指针悬停的通电态交给 CSS（:hover/:focus-within），不抢读数的位——
+   * 两种状态分工：is-live = 「读到这」（半通电），hover = 「指针在这」（满电 + 电流点）。
+   */
+  const items = document.querySelectorAll<HTMLElement>('.tl-item');
+  if (items.length > 0) {
+    let live = -1;
+    const setLive = (idx: number) => {
+      items.forEach((el) =>
+        el.classList.toggle('is-live', Number(el.dataset.idx) === idx)
+      );
+    };
+
+    const spy = () => {
+      // 取视口 42% 处作准星：避开顶部 sticky nav 与底部页脚
+      const mid = window.innerHeight * 0.42;
+      let best = -1;
+      let bestDist = Infinity;
+      items.forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const dist = Math.abs(r.top + r.height / 2 - mid);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = Number(el.dataset.idx);
+        }
+      });
+      if (best >= 0 && best !== live) {
+        live = best;
+        setLive(best);
+      }
+    };
+
+    let raf = 0;
+    const queue = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        spy();
+      });
+    };
+    window.addEventListener('scroll', queue, { passive: true });
+    window.addEventListener('resize', queue);
+    spy();
+  }
+</script>
+
 <style>
-  .posts {
+  /* 时间线＝PCB 总线（媒介映射，见 ADR-0012 同款状态语言）：
+     · 总线 / 分支走线 = 2px 走线；焊盘 = 2px 环 + 空芯（通电即填实，面积变化）
+     · 日期 = 丝印字（非正文），移出卡片
+     状态三级：未点亮（走线 65% accent / 焊盘空芯）→ 读到这（走线 100% / 芯填实）
+     → 指针在这（走线 4px 满电 / 芯白热 / 电流点流进卡片 + 卡片左缘焊点）。 */
+  /* 视图切换入口：贴在页标题下、列表之上，与 .back 同档（丝印级小字） */
+  .view-switch {
+    margin: 0 0 1rem;
+  }
+  .view-link {
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    color: var(--color-text-dim);
+    /* 2026-10-29：dim 字 + 无下划线 = 读作说明文字（截图实锤「按标签浏览 →」像 caption）。
+       给回全站链接语言：常驻 2px 下划线（line 色），hover 转 accent + 文字提亮。 */
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--c-accent) 55%, transparent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+
+  .view-link:hover,
+  .view-link:focus-visible {
+    color: var(--c-text);
+    text-decoration-color: var(--c-accent);
+  }
+
+  .timeline {
+    --tl-mark: 4.5rem; /* 左栏丝印宽度（收窄，让卡片更宽） */
+    --tl-link: 2rem; /* 总线到卡片的连接栏宽度 */
+    --tl-gap: 1.5rem;
+    /* 三级状态的分工（延续 ADR-0012：面积/明度变化为主，不靠色相翻转）：
+       总线长而连续，可用 65% 强调色——2px 连续线在最低对比主题（dawnbringer-ember）
+       仍有 2.5:1，可辨；分支短（20px），必须用 100% 强调色（全主题 ≥4.0:1）才看得出。 */
+    --tl-rail: color-mix(in srgb, var(--c-accent) 65%, transparent);
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--tl-gap);
   }
 
+  .tl-item {
+    display: grid;
+    grid-template-columns: var(--tl-mark) var(--tl-link) 1fr;
+    align-items: start;
+  }
+
+  /* 丝印日期：两行右对齐，垂直中心落在焊盘中线上（padding/gap 与两行行高联动，勿单改其一）。
+     行高归整后：16px（年）+ 4px gap + 20px（日期）= 40px，取 padding-top 1rem(16px)，
+     两行中心 = 16 + 20 = 36px = 焊盘中心（.tl-pad top 2.25rem-6px + 6px）。
+     e2e blog-timeline.spec.ts 会校这个±2px 对齐，改字号必重算。 */
+  .tl-mark {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+    padding: 1rem 1rem 0 0;
+    color: var(--color-text-dim);
+    transition: color 0.08s steps(2);
+  }
+
+  .tl-year {
+    font-size: 0.75rem;
+    line-height: 16px;
+    letter-spacing: 0.16em;
+  }
+
+  .tl-date {
+    font-size: 0.875rem;
+    line-height: 20px;
+    letter-spacing: 0.08em;
+  }
+
+  .tl-item.is-live .tl-mark,
+  .tl-item:hover .tl-mark,
+  .tl-item:focus-within .tl-mark {
+    color: var(--c-text);
+  }
+
+  .tl-link {
+    position: relative;
+    align-self: stretch;
+  }
+
+  /* 总线：逐段绘制（每段跨到列表 gap），首段起点落在首个焊盘、末段终点落在末个焊盘——
+     一条总线有确定端点，而不是悬在半空的竖线。焊盘背景取页面底色，天然遮断。 */
+  .tl-link::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: calc(-1 * var(--tl-gap));
+    left: 50%;
+    margin-left: -1px;
+    width: 2px;
+    background: var(--tl-rail);
+    transition: background-color 0.08s steps(2);
+  }
+
+  .tl-item:first-child .tl-link::before {
+    top: 2.25rem;
+  }
+
+  .tl-item:last-child .tl-link::before {
+    bottom: auto;
+    height: 2.25rem;
+  }
+
+  .tl-item.is-live .tl-link::before {
+    /* 电流经过本段：整段总线提亮到满强调色 */
+    background: var(--c-accent);
+  }
+
+  /* 焊盘：2px 环 + 空芯。芯色取页面底，正好遮断背后的总线 */
+  .tl-pad {
+    position: absolute;
+    top: calc(2.25rem - 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12px;
+    height: 12px;
+    background: var(--c-bg);
+    box-shadow: inset 0 0 0 2px var(--c-accent);
+    transition: background-color 0.08s steps(2);
+  }
+
+  .tl-item.is-live .tl-pad {
+    background: var(--c-accent);
+  }
+
+  .tl-item:hover .tl-pad,
+  .tl-item:focus-within .tl-pad {
+    /* 白热芯（双芯辉光：事件才出白芯），芯面积变化在任何主题下都看得见 */
+    background: var(--c-text);
+  }
+
+  /* 分支走线：焊盘 → 卡片左缘 */
+  .tl-branch {
+    position: absolute;
+    top: calc(2.25rem - 1px);
+    left: 50%;
+    right: 0;
+    height: 2px;
+    background: var(--c-accent);
+    transition: height 0.08s steps(2);
+  }
+
+  .tl-item:hover .tl-branch,
+  .tl-item:focus-within .tl-branch {
+    top: calc(2.25rem - 2px);
+    height: 4px;
+  }
+
+  /* 电流点：悬停时从焊盘沿分支流进卡片（steps = 像素跳格），到位即熄 */
+  .tl-dot {
+    position: absolute;
+    top: calc(2.25rem - 4px);
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    background: var(--c-text);
+    box-shadow: 0 0 0 2px var(--c-accent);
+    opacity: 0;
+  }
+
+  .tl-item:hover .tl-dot,
+  .tl-item:focus-within .tl-dot {
+    animation: tl-flow 300ms steps(3, end) both;
+  }
+
+  @keyframes tl-flow {
+    0% {
+      left: 50%;
+      opacity: 1;
+    }
+    70% {
+      left: calc(100% - 4px);
+      opacity: 1;
+    }
+    100% {
+      left: calc(100% - 4px);
+      opacity: 0;
+    }
+  }
+
+  /* 卡片：分支的终端焊点（白热芯 + 磷光晕），只在指针态出现 */
   .card {
+    position: relative;
     display: grid;
     grid-template-columns: 6rem 1fr;
     gap: 1.25rem;
     align-items: start;
   }
 
+  .card::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -4px;
+    width: 8px;
+    height: 8px;
+    margin-top: -4px;
+    background: var(--c-text);
+    box-shadow: 0 0 0 2px var(--c-accent);
+    opacity: 0;
+    transition: opacity 0.08s steps(2);
+  }
+
+  .tl-item:hover .card::after,
+  .tl-item:focus-within .card::after {
+    opacity: 1;
+  }
+
   .body h3 {
-    margin-bottom: 0.35rem;
+    /* 列表卡标题：16px（比正文 14px 略大一级，但不会喧宾夺主） */
+    font-size: 1rem; /* 16px */
+    line-height: 24px;
+    letter-spacing: var(--ls-16);
+    margin-bottom: 1rem;
   }
 
   .body h3 a:hover {
-    color: var(--gb-2);
-  }
-
-  .meta {
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    color: var(--gb-2);
-    margin-bottom: 0.5rem;
+    /* 标题 hover：文字仍结构色，强调色转为 2px 下划线 */
+    color: var(--color-text);
+    text-decoration: underline;
+    text-decoration-color: var(--c-accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
   }
 
   .desc {
+    /* 次级文字（比标题暗一档、但达标）：坐在页面底色上，dim 最差 4.56:1（AA ✓），
+       与标题亮度差 ≥1.32 倍——层级靠「亮度 + 字号」两层，不是靠同色。
+       行高 24px（14px 字 → 1.71），不再 20px（1.43 太紧）。 */
     color: var(--color-text-dim);
-    font-size: 0.9rem;
+    font-size: 0.875rem;
+    letter-spacing: normal;
+    line-height: 24px;
+    /* 摘要限 6 行（roadmap U4）。
+       实测：摘要字数中位 106 / 最长 183；正文列移动端 204px（≈14.5 字/行）→
+       最长要 12.6 行，单卡高被拖到 342px 且成了一面「文字墙」；
+       桌面列 588px（≈42 字/行）→ 最长只 4.4 行，**永远碰不到这个上限**。
+       所以这一条规则两端各得其所：移动端收敛到 6 行（卡高 342 → 322，达 U4 目标 ≤330），
+       桌面行为完全不变。限行只影响渲染，DOM 里仍是完整摘要（SEO / 无障碍 / 精选摘录不受影响）。 */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+    overflow: hidden;
   }
 
   .tags {
@@ -92,9 +393,49 @@ const description = '文章列表：工程笔记（engineering notes）与项目
   }
 
   @media (max-width: 560px) {
+    .timeline {
+      /* P1-4：左栏与连接栏再收一档，把宽度全给正文列（147.6 → ≥210px）。
+         总线仍在（2px gb-2），焊盘降到 6px 但位置不变——时间线语言不丢。 */
+      --tl-mark: 2.25rem;
+      --tl-link: 0.875rem;
+    }
+
+    /* 窄屏：收窄左栏、隐藏年份（月-日已足够定位），丝印仍与焊盘中线对齐：
+       padding-top 1.75rem(28px) + 行高 16px 的一半 = 36px（窄屏 .tl-pad 中心） */
+    .tl-mark {
+      padding: 1.75rem 0.4rem 0 0;
+    }
+
+    .tl-year {
+      display: none;
+    }
+
+    .tl-date {
+      font-size: 0.75rem;
+      line-height: 16px;
+    }
+
+    .tl-pad {
+      top: calc(2.25rem - 4px);
+      width: 8px;
+      height: 8px;
+    }
+
     .card {
-      grid-template-columns: 4rem 1fr;
-      gap: 0.9rem;
+      /* 移动端：封面从左侧列改为顶部横条（P1-4）。
+         实测旧状：左栏 44 + 连接栏 20 + 内边距 52 + 封面 64 + gap 20 = 200px
+         被几何吃掉，正文列只剩 147.6px（≈每行 10 个汉字），单卡高 430px。
+         改后：封面降到 3rem 并与标题同行（不再独占一列），正文列升到 ≥210px。 */
+      grid-template-columns: 3rem 1fr;
+      gap: 0.75rem;
+      padding: calc(var(--step) * 4) calc(var(--step) * 4);
+    }
+
+    /* 封面缩到 3rem 档：与 ADR-0014 的「列表/单篇同尺寸再现」契约解耦——
+       该契约针对桌面版（6rem）；窄屏以「正文可读」优先，
+       单篇页封面仍为 6rem（手机上看单篇封面尺寸不变）。 */
+    .cover-block {
+      width: 3rem;
     }
   }
 </style>

@@ -10,7 +10,7 @@ import {
 } from '../../src/lib/sfx';
 import { installMemoryStorage, removeMemoryStorage } from './helpers/local-storage';
 
-const ROLES: SfxRole[] = ['click', 'game', 'hover', 'nav', 'select', 'toggle'];
+const ROLES: SfxRole[] = ['click', 'game', 'hover', 'nav', 'toggle'];
 
 /* ---------- sfx 开关偏好（委托 sfxPref） ---------- */
 describe('sfx 开关偏好（委托 sfxPref）', () => {
@@ -96,8 +96,8 @@ describe('全站 data-sfx-role / data-sfx-hover 属性契约', () => {
     }
   });
 
-  it('五类操作角色（nav/click/toggle/select/game）全站均有落地元素（防映射表写了但没接）', () => {
-    for (const role of ['nav', 'click', 'toggle', 'select', 'game']) {
+  it('四类操作角色（nav/click/toggle/game）+ hover 全站均有落地元素（防映射表写了但没接）', () => {
+    for (const role of ['nav', 'click', 'toggle', 'game']) {
       expect(
         allText.includes(`data-sfx-role="${role}"`),
         `data-sfx-role="${role}" 应至少出现在一个元素上`

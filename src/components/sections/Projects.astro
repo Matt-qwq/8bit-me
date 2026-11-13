@@ -1,14 +1,10 @@
 ---
 import { siteConfig } from '../../lib/config';
 
-// 章节内翻页（作者指定）：6 张卡按每屏 2 张切成 3 个子屏，
-// 每个子屏是一“硬切”单位；翻完子屏才进下一章。卡片数比一屏高时，
-// 不再靠屏内自由滚动，而是像 PPT 一样一屏一屏翻。
-const PER_PAGE = 2;
-const pages: typeof siteConfig.projects[] = [];
-for (let i = 0; i < siteConfig.projects.length; i += PER_PAGE) {
-  pages.push(siteConfig.projects.slice(i, i + PER_PAGE));
-}
+// 6 卡网格（A6）：章节内子屏/分页器已随 fullpage 骨架退役（2026-09 方案
+// home-scroll-reveal-redesign），卡片由 index.astro 的统一编排
+// （标题先行 → 卡片 stagger 浮入，reveal-motion.ts）依次揭示。
+// 无 JS = 网格平铺可见（仅 JS 加 reveal-card，与全站纪律一致）。
 ---
 
 <section id="projects">
@@ -17,83 +13,41 @@ for (let i = 0; i < siteConfig.projects.length; i += PER_PAGE) {
       <span class="num text-pixel">02</span><span class="text-pixel">PROJECTS</span> <span class="text-dim">作品集</span>
     </h2>
 
-    <div class="subpages">
+    <ul class="proj-grid">
       {
-        pages.map((page, pi) => (
-          <ul class="proj-page" data-page={pi}>
-            {page.map((project) => (
-              <li class="pixel-panel card">
-                <h3 class="text-pixel name">{project.name}</h3>
-                <p class="desc">{project.description}</p>
-                <p class="tags">
-                  {project.tags.map((tag) => (
-                    <span class="tag text-pixel">{tag}</span>
-                  ))}
-                </p>
-                {project.url && (
-                  <a class="pixel-btn" href={project.url} data-sfx-role="click">
-                    VIEW
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
+        siteConfig.projects.map((project) => (
+          <li class="pixel-panel card">
+            <h3 class="text-pixel name">{project.name}</h3>
+            <p class="desc">{project.description}</p>
+            <p class="tags">
+              {project.tags.map((tag) => (
+                <span class="tag text-pixel">{tag}</span>
+              ))}
+            </p>
+            {/* 动作位：无论项目有没有外链都占位——否则同一行里
+                「有 VIEW」与「没 VIEW」的卡，tags 会落到两个高度（实测差 14px）。 */}
+            <div class="actions">
+              {project.url && (
+                <a class="pixel-btn" href={project.url} data-sfx-role="click">
+                  VIEW
+                </a>
+              )}
+            </div>
+          </li>
         ))
       }
-    </div>
-
-    <div class="proj-pager" aria-hidden="true">
-      {pages.map((_, pi) => <span class="dot" data-i={pi}></span>)}
-    </div>
+    </ul>
   </div>
 </section>
 
 <style>
-  /* 默认（无 JS / 内容可访问性）：3 个子屏全部平铺显示，一张卡都不丢。
-     子屏分页是“增强”，由 index.astro 加 .is-paged 后才启用——与全站
-     「仅 JS 加类，无 JS 时内容默认可见」的约定一致。 */
-  .subpages {
-    min-height: 0;
-  }
-
-  .proj-page {
+  .proj-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 1.5rem;
     list-style: none;
     margin: 0;
     padding: 0;
-  }
-
-  .proj-pager {
-    display: none;
-    gap: 0.6rem;
-    justify-content: center;
-    margin-top: 1.4rem;
-  }
-
-  /* 有 JS：切成分页模式——同一时刻只显示激活子屏，卡片由 WAAPI 点亮 */
-  .subpages.is-paged .proj-page {
-    display: none;
-  }
-  .subpages.is-paged .proj-page.is-active {
-    display: grid;
-  }
-  .subpages.is-paged .proj-page .pixel-panel.card {
-    opacity: 0;
-  }
-  .proj-pager.is-paged {
-    display: flex;
-  }
-  .dot {
-    width: 10px;
-    height: 10px;
-    background: var(--gb-1);
-    /* 像素方块，不做圆角 */
-    transition: background 0.12s steps(2);
-  }
-  .dot.is-active {
-    background: var(--gb-2);
   }
 
   .card {
@@ -106,13 +60,15 @@ for (let i = 0; i < siteConfig.projects.length; i += PER_PAGE) {
   .card:hover {
     transform: translate(-2px, -2px);
     box-shadow:
-      inset 4px 4px 0 color-mix(in srgb, var(--gb-3) 10%, transparent),
-      6px 6px 0 color-mix(in srgb, var(--gb-1) 70%, transparent);
+      inset 4px 4px 0 color-mix(in srgb, var(--c-text) 10%, transparent),
+      6px 6px 0 color-mix(in srgb, var(--c-line) 70%, transparent);
   }
 
   .name {
-    font-size: 0.9rem;
-    color: var(--gb-3);
+    font-size: 0.875rem;
+    letter-spacing: var(--ls-14);
+    line-height: 20px;
+    color: var(--c-text);
     margin: 0;
     /* 竖直让开左上角焊盘（面板 padding 24px 起始 28px，焊盘占 24–40px）；
        仅标题下沉、desc/tags 不动，避免左缩进错位 */
@@ -122,9 +78,11 @@ for (let i = 0; i < siteConfig.projects.length; i += PER_PAGE) {
 
   /* 描述压暗：卡片焦点回到项目名（丝印「标题→说明」层级） */
   .desc {
+    /* 次级文字（同 blog 列表卡）：dim 达标 + 亮度分层 + 行高 24px 可读 */
     color: var(--color-text-dim);
-    font-size: 0.85rem;
-    line-height: 1.5;
+    font-size: 0.875rem;
+    letter-spacing: normal;
+    line-height: 24px;
     margin: 0;
   }
 
@@ -138,7 +96,15 @@ for (let i = 0; i < siteConfig.projects.length; i += PER_PAGE) {
 
   .card .pixel-btn {
     align-self: flex-start;
-    font-size: 0.6rem;
+    font-size: 0.75rem; /* 行高/字距沿用 .pixel-btn（1.4 / 0.08em tracking） */
     padding: 0.45rem 0.8rem;
+  }
+
+  /* 动作位固定高度 = 按钮高（2.25rem）：没外链的卡也占这一行，
+     同一行的 tags / 按钮才会对到同一条基线。 */
+  .actions {
+    display: flex;
+    align-items: flex-start;
+    min-height: 2.25rem;
   }
 </style>

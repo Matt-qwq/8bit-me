@@ -2,16 +2,16 @@
 import '../styles/global.css';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
-import CrtScanlines from '../components/CrtScanlines.astro';
+import SiteHud from '../components/SiteHud.astro';
 import SideDock from '../components/SideDock.astro';
 import Konami from '../components/Konami.astro';
 import SfxRoles from '../components/SfxRoles.astro';
 import CursorFx from '../components/CursorFx.astro';
 import BgFx from '../components/BgFx.astro';
 import PageTrans from '../components/PageTrans.astro';
-import { THEMES } from '../lib/themes';
-import { themePref } from '../lib/prefs';
+import { DARK } from '../lib/themes';
 import { siteConfig } from '../lib/config';
+import { getPublishedPosts, formatDate } from '../lib/posts';
 
 interface Props {
   /** 页面独立 title（SEO，User Story 22） */
@@ -28,31 +28,32 @@ const {
   bgfxHeroVivid = false,
 } = Astro.props;
 
-/** 13 套主题色块（单一数据源 themes.ts → CSS，替代 global.css 手写块） */
-const themeCss = THEMES.map(
-  (t) =>
-    `:root[data-theme="${t.key}"]{--gb-0:${t.colors[0]};--gb-1:${t.colors[1]};--gb-2:${t.colors[2]};--gb-3:${t.colors[3]};}`
-).join('\n');
+/** SiteHud（B1）数据：与 about .meta / hero 站况读数同一条 posts 链（构建期静态算出） */
+const published = await getPublishedPosts();
+const hudCount = published.length;
+const hudUpdated = published[0] ? formatDate(published[0].data.date) : '—';
+
+/** 主题色块（单一数据源 themes.ts → CSS，替代 global.css 手写）。
+    单档（2026-09-23 作者裁决：不要浅色主题了）：暗色值直接进 :root，
+    不再有 data-mode 属性选择器与防闪档预挂载。 */
+const modeCss = `:root{--c-bg:${DARK.colors.bg};--c-panel:${DARK.colors.panel};--c-line:${DARK.colors.line};--c-accent:${DARK.colors.accent};--c-text:${DARK.colors.text};}`;
+
+/** 字体声明注入（base 感知）：@font-face 必须由 layout 在服务端拼成**字面量 URL** ——
+    ① 字体 URL 需要带 BASE_URL 前缀（GitHub Pages 子路径部署 ASTRO_BASE=/8bit-me/），
+      而 CSS 文件里写 `/fonts/…` 会被 Vite 在 Windows 上误解析成文件系统根路径；
+    ② 不能用 `url(var(--x))` 转手（var() 不能出现在 url() 里，是非法 CSS，
+      浏览器与压缩器都会丢弃整条 src —— 2026-09-08 作者发现的静默回归，
+      Zpix 曾因此完全不加载）。
+    防线：tests/unit/font-face.spec.ts + tests/e2e/font.spec.ts。 */
+const fontCss = `@font-face{font-family:'Zpix';font-style:normal;font-weight:400;font-display:block;src:url('${import.meta.env.BASE_URL}fonts/zpix.subset.woff2') format('woff2'),url('${import.meta.env.BASE_URL}fonts/zpix.ttf') format('truetype');}`;
 ---
 
 <!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <script is:inline define:vars={{ themeKey: themePref.key, themeKeys: THEMES.map((t) => t.key) }}>
-      // 主题预挂载（防 FOUC）：同步读 localStorage，在首帧样式应用前
-      // 把已存主题写到 <html data-theme>。
-      // 无记录 / 读取失败 / 脏数据 → 不设置，由 global.css :root 默认渲染 sms-surf。
-      try {
-        const saved = localStorage.getItem(themeKey);
-        if (saved && themeKeys.indexOf(saved) !== -1) {
-          document.documentElement.dataset.theme = saved;
-        }
-      } catch (err) {
-        // storage 不可用（隐私模式等）→ 保持默认主题
-      }
-    </script>
-    <style is:inline set:html={themeCss}></style>
+    <style is:inline set:html={modeCss}></style>
+    <style is:inline set:html={fontCss}></style>
     <link
       rel="icon"
       type="image/svg+xml"
@@ -87,34 +88,22 @@ const themeCss = THEMES.map(
     }
   </head>
   <body>
+    {/* 跳转链接（2026-10-29 a11y 审计补）：全站 7 个导航项 + 卡片，键盘用户
+        每页都要先 Tab 过一遍。它是**第一个**可聚焦元素，聚焦才显形。
+        main 带 tabindex="-1"：片段链接要真把焦点移过去（否则只滚不聚焦，
+        屏幕阅读器仍停在导航里）。 */}
+    <a class="skip-link text-pixel" href="#main">跳到正文</a>
     <BgFx heroVivid={bgfxHeroVivid} />
     <Nav />
-    <main id="main">
+    <main id="main" tabindex="-1">
       <slot />
     </main>
     <Footer />
-    <CrtScanlines />
+    <SiteHud count={hudCount} updated={hudUpdated} />
     <SideDock />
     <Konami />
     <CursorFx />
     <PageTrans />
     <SfxRoles />
-    <script is:inline>
-      // 角点注入：给所有 .pixel-panel / .cover-block 补 4 个 .pp-pad 真实子元素。
-      // 伪元素不可 WAAPI 动画，故角标点亮需真实元素（形态由 global.css 控制）。
-      // 全站注入；点亮由各页入场脚本负责，未接入场脚本的页（blog/404）角点默认可见。
-      (function () {
-        var PAD = ['tl', 'tr', 'bl', 'br'];
-        document.querySelectorAll('.pixel-panel, .cover-block').forEach(function (host) {
-          if (host.querySelector('.pp-pad')) return;
-          PAD.forEach(function (c) {
-            var pad = document.createElement('span');
-            pad.className = 'pp-pad ' + c;
-            pad.setAttribute('aria-hidden', 'true');
-            host.appendChild(pad);
-          });
-        });
-      })();
-    </script>
   </body>
 </html>

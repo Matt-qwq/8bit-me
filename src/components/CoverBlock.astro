@@ -1,7 +1,14 @@
 ---
+import { coverSpec, glyphCover, coverPaths } from '../lib/cover-art';
+
 /**
  * cover block（封面像素盒）：post.cover 的唯一展示件。
- * - cover 缺失时的 fallback '▣' 集中在此，调用方不再各自 ?? '▣'
+ * - 图形 = 手工像素符号 + 版本跳线（src/lib/cover-art.ts + cover-glyphs.ts）：
+ *   frontmatter 的 cover（emoji）只做**符号选择**，schema / frontmatter 零迁移；
+ *   同 slug 在列表页与单篇页拿到同一矩阵 → 逐格一致（同尺寸再现）。
+ * - 像素图随主题变色（--c-accent 强调焦点 / --c-text 浅墨），不再是不随主题走的 emoji 文本。
+ * - 对外 props（cover / seed / href / size / showTag）与尺寸档、aria-hidden 均未变，
+ *   换的只是盒内构图语言（identicon 噪点矩阵 → 轮廓 / 剪影 + 统一家具）。
  * - href 传入时渲染为链接（列表页复用，装饰性：aria-hidden + tabindex=-1）
  * - 样式定义在 global.css（.cover-block），列表与单篇共用一份
  * - 隐藏依赖：4 个角点 .pp-pad 由 BaseLayout 的 is:inline 脚本全站注入
@@ -10,6 +17,8 @@
  */
 interface Props {
   cover?: string;
+  /** 图形 seed（= post.id）；与 cover 一起做盐，保证同篇两处封面同图 */
+  seed?: string;
   /** 传入则渲染 <a>（列表页跳转用） */
   href?: string;
   /** md = 列表（随格子宽度填充，6rem 列）；lg = 单篇（固定 6rem，与 md 同尺寸，承接拇指图） */
@@ -18,8 +27,13 @@ interface Props {
   showTag?: boolean;
 }
 
-const { cover, href, size = 'md', showTag = false } = Astro.props;
-const glyph = cover && cover.trim() !== '' ? cover : '▣';
+const { cover, seed, href, size = 'md', showTag = false } = Astro.props;
+
+/** 规格只从文章自身派生（slug + emoji）→ 列表与单篇必然同图 */
+const spec = coverSpec({ id: seed, cover });
+const rows = glyphCover(spec);
+const grid = rows.length;
+const { accent, light, dark } = coverPaths(rows);
 ---
 
 {
@@ -30,12 +44,62 @@ const glyph = cover && cover.trim() !== '' ? cover : '▣';
       aria-hidden="true"
       tabindex="-1"
     >
-      <span class="cover-glyph">{glyph}</span>
+      <svg
+        class="cover-art"
+        viewBox={`0 0 ${grid} ${grid}`}
+        shape-rendering="crispEdges"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path class="ink-accent" d={accent} />
+        <path class="ink-light" d={light} />
+        {dark && <path class="ink-dark" d={dark} />}
+      </svg>
       {showTag && <span class="cover-tag text-pixel">COVER</span>}
     </a>
   ) : (
     <span class={`cover-block ${size}`} aria-hidden="true">
-      <span class="cover-glyph">{glyph}</span>
+      <svg
+        class="cover-art"
+        viewBox={`0 0 ${grid} ${grid}`}
+        shape-rendering="crispEdges"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path class="ink-accent" d={accent} />
+        <path class="ink-light" d={light} />
+        {dark && <path class="ink-dark" d={dark} />}
+      </svg>
     </span>
   )
 }
+
+<style>
+  /* 像素图本体：16×16 格拼成的两条 path（不是 256 个 <rect>——列表页十几张图
+     会多出数千节点）。宽度撑满封面盒，高度吃掉 COVER 丝印之外的剩余空间，
+     保持正方（preserveAspectRatio 默认 xMidYMid meet 居中）。
+     flex-basis 必须是 0（不是 auto）：auto 会让 SVG 用自身 88px 固有高，
+     把 1:1 铭牌顶成 96×120 的竖牌（实测过）；basis 0 才让铭牌保持正方形。 */
+  .cover-art {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0; /* flex 列里允许被丝印挤压，否则撑破 1:1 封面盒 */
+    flex: 1 1 0;
+  }
+
+  /* 两级配色：强调色 + 浅色，全部走主题四色变量，切主题自动跟随 */
+  .cover-art .ink-accent {
+    fill: var(--c-accent);
+  }
+
+  .cover-art .ink-light {
+    fill: var(--c-text);
+  }
+
+  /* 暗场层（--c-line）：候选①不用它（暗场只做「凹面材料」，从不承载主形），
+     契约留位——将来若换语法，组件不必再改。空 path 不渲染。 */
+  .cover-art .ink-dark {
+    fill: var(--c-line);
+  }
+</style>

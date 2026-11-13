@@ -1,29 +1,519 @@
 ---
-import AvatarSprite from '../AvatarSprite.astro';
-import { siteConfig, url } from '../../lib/config';
+import CrtTerminal from '../CrtTerminal.astro';
+import { siteConfig, siteWeather, url } from '../../lib/config';
+import { getPublishedPosts, formatDate } from '../../lib/posts';
+
+/** 站况读数：构建期静态算出，零运行时、零新依赖。
+    数据源与 /blog 列表、/blog/tags 同一来源（不可能漂移）。 */
+const posts = await getPublishedPosts();
+const latest = posts[0];
+const status = [
+  { k: 'POSTS', v: `${posts.length} 篇` },
+  { k: 'UPDATE', v: latest ? formatDate(latest.data.date) : '—' },
+];
 ---
 
 <section id="hero" class="hero">
-  <div class="container hero-inner">
-    <AvatarSprite size={112} />
-    <div class="hero-text">
-      <p class="text-pixel kicker">Press START</p>
-      <h1>{siteConfig.title}</h1>
-      <p class="tagline text-pixel">{siteConfig.tagline}</p>
-      <p class="intro">
-        你好，我是 {siteConfig.author} —— 用 AI 辅助工具链做工程化落地、
-        把 RPA 迁移 / 数据管道 / 黑盒逆向里的乱摊子收敛成体系的
-        工程师。这个 8-bit 实验场记录方法论与实验：能力证据在作品集，
-        长文在博客。
-      </p>
-      <div class="actions">
-        <a class="pixel-btn" href="#projects" data-sfx-role="nav" data-sfx-hover>作品集</a>
-        <a class="pixel-btn" href={url('blog')} data-sfx-role="nav" data-sfx-hover>阅读博客</a>
-        <a class="pixel-btn" href="https://github.com/Matt-qwq" target="_blank" rel="noopener noreferrer" data-sfx-role="click" data-sfx-hover>GitHub</a>
+  <div class="container">
+    <div class="hero-inner">
+      {/* 工位静物层（T10「窗边工位」）：CRT 屏里是一台正在打字的终端
+          （CrtTerminal，代码生成零图片，作者 2026-10-02 终局裁决），「Press START」
+          收进屏下 bezel 作一行丝印。几何由脚本从 deskSpec 写进 CSS 变量
+          （--crt-screen-*），桌面档固定到视口、与 canvas 的工位同坐标。 */}
+      <div class="hero-scene">
+        <div class="crt-avatar"><CrtTerminal /></div>
+        <p class="text-pixel kicker crt-label">Press START</p>
       </div>
+      <div class="hero-text">
+        {/* data-tw-line = 打字机作用范围的**唯一载体**（契约单测读这两个属性）：
+            h1 + tagline + intro 三行。kicker / CTA / 站况读数不打 ——
+            读数是**要紧数据**，延迟它违反「绝不延迟内容」（见 ADR-0017）。
+            2026-09-11 作者反馈：「只有上面在打字，下面不打字，很突兀」→
+            intro 纳入范围，同时把节奏从 58ms/字 调到 32ms/字（否则三行要 3.9s）。 */}
+        <h1 data-tw-line>{siteConfig.title}</h1>
+        <p class="tagline text-pixel" data-tw-line>{siteConfig.tagline}</p>
+        <p class="intro" data-tw-line>
+          {siteConfig.author} 的工程复盘站：做过的项目、踩过的坑、
+          沉淀下来的做法，都在这里。
+        </p>
+        {/* 打字机光标（模板里就渲染好，只为拿到 Astro 的 scoped 样式属性 ——
+            运行时 createElement 造的元素拿不到 data-astro-cid，样式会静默不生效）。
+            默认 hidden：无 JS 时永不可见；脚本接管后才显示，打完又藏回去。 */}
+        <div class="tw-caret" aria-hidden="true" hidden></div>
+      </div>
+      {/* 三盘卡带（T10）：href / sfx 属性原样保留，只是从横排按钮改成 DOM 卡带，
+          立在桌面上（x = deskSpec.cartXs，底边 = 桌沿）。卡带本体是 DOM，
+          canvas 那三处只留锚点空位（T8 没画本体）。窄屏回退成既有横排按钮。 */}
+      <nav class="hero-cta hero-carts" aria-label="首屏快捷入口">
+        <a class="pixel-btn cart" href="#projects" data-sfx-role="nav" data-sfx-hover><span>作品集</span></a>
+        <a class="pixel-btn cart cart--primary" href={url('blog')} data-sfx-role="nav" data-sfx-hover><span>阅读博客</span></a>
+        <a class="pixel-btn cart" href="https://github.com/Matt-qwq" target="_blank" rel="noopener noreferrer" data-sfx-role="click" data-sfx-hover><span>GitHub</span></a>
+      </nav>
+      {/* 站况读数（丝印语言，非正文）：告诉首次到访的人「这里有真东西」，
+           数据全部来自 getPublishedPosts / THEMES，不手写。 */}
+      <dl class="hero-status">
+        {status.map((s) => (
+          <div class="hero-status__row">
+            <dt class="text-pixel">{s.k}</dt>
+            <dd>{s.v}</dd>
+          </div>
+        ))}
+      </dl>
+      {/* 实况读数（ADR-0020「窗外」的仪表）：作者城市本地时刻 + 实时天气。
+           它是「世界叙事」的解释器——访客一眼明白「这是某人窗外真实的世界」。
+           静态壳先渲染占位，JS 接管后填时刻与天气词（无 JS 时保持占位不破版）。 */}
+      <p class="hero-live text-pixel">
+        <span data-live-time>LOCAL --:--</span> · {siteWeather.label} · <span data-live-wx>CLEAR</span>
+      </p>
     </div>
   </div>
+  {/* 窄屏滚动提示（2026-10-29）：390×844 实测 hero 内容到 680px 结束、下面 163px 是空的，
+      访客看不到「页面还很长」。只在 ≤560px 显示——桌面档内容本来就占满一屏，加了是噪声。
+      装饰性质 → aria-hidden。 */}
+  <p class="hero-scroll text-pixel" aria-hidden="true">SCROLL <span class="hero-scroll__arrow">↓</span></p>
 </section>
+
+{/* 打字机预挂载（is:inline：必须紧跟标记、在首帧前把三行裁掉，防 FOUC）。
+    ① 解析期就把三行裁掉 → 不存在「先显示全字再跳回空白」的闪烁；
+    ② 3s 兜底：模块脚本没接管（chunk 404 / 被拦）就自己揭幕，文字不可能永久隐藏；
+    ③ bfcache 恢复：往返导航回来时模块不会重跑，这里负责把裁切清干净。
+    clip-path 不进布局（不参与尺寸计算），故裁掉后布局与静态版逐像素一致。 */}
+<script is:inline>
+  (() => {
+    // 桌面工位布局的「首次上坐标」由模块脚本完成（要 import deskSpec）；
+    // 它跑之前先藏住 hero 内容，避免「居中栈 → 工位」的一帧跳位。
+    // 1.2s 兜底：模块没跑到（chunk 404 / 被拦）就自己揭幕，内容不可能永久隐藏。
+    const hero = document.getElementById('hero');
+    if (hero) {
+      hero.classList.add('hero--boot');
+      setTimeout(() => hero.classList.remove('hero--boot'), 1200);
+    }
+    const lines = document.querySelectorAll('#hero [data-tw-line]');
+    if (!lines.length) return;
+    const clear = () => {
+      lines.forEach((el) => el.style.removeProperty('clip-path'));
+      const caret = document.querySelector('#hero .tw-caret');
+      if (caret) caret.hidden = true;
+    };
+    // 不支持 clip-path 就不裁（老引擎走静态显示，零风险）
+    if (!window.CSS || !CSS.supports('clip-path', 'polygon(0 0, 0 0, 0 0)')) return;
+    lines.forEach((el) => el.style.setProperty('clip-path', 'inset(0 100% 0 0)'));
+    // 3s 兜底：模块没跑到接管态（chunk 404 / 中途抛错 / 被拦）就自己揭幕。
+    // 注意判据是 'on'/'done' 两个都算接管：打字机现在**等这一章进视口才打**
+    //（ADR-0027），若只认 'done'，首屏那三秒一到就会把还没开始打的字揭幕。
+    setTimeout(() => {
+      const tw = document.documentElement.dataset.tw;
+      if (tw !== 'on' && tw !== 'done') clear();
+    }, 3000);
+    addEventListener('pageshow', (e) => {
+      if (e.persisted) clear();
+    });
+  })();
+</script>
+
+{/* 工位坐标接线（T10）：**唯一数据源 = desk-room / window-room 两个纯函数模块**。
+    这里只把模块算出的几何写进 #hero 的 CSS 变量，CSS 里不再重复推导像素常量。
+    坐标系：deskSpec(w,h) 的 w/h = canvas 逻辑宽高（= .bgfx-canvas 的 rect，
+    不含滚动条），与 BgFx 的 getSize() 同一坐标系；固定定位层用视口坐标，
+    所以 DOM 与 canvas 画的工位逐像素对齐（窄屏 deskSpec 返 null → 走居中栈）。 */}
+<script>
+  import { deskSpec } from '../../lib/desk-room';
+  import { DARK } from '../../lib/themes';
+
+  const hero = document.getElementById('hero');
+  if (hero) {
+    const carts = Array.from(hero.querySelectorAll<HTMLElement>('.hero-carts .cart'));
+
+    /** 工位几何 → CSS 变量 */
+    const apply = () => {
+      const wrap = document.querySelector<HTMLElement>('.bgfx-canvas');
+      const cr = wrap?.getBoundingClientRect();
+      const w = Math.max(1, Math.round(cr?.width ?? window.innerWidth));
+      const h = Math.max(1, Math.round(cr?.height ?? window.innerHeight));
+      const d = deskSpec(w, h);
+      const s = hero.style;
+      if (!d) {
+        // 窄屏：整组工位退场（canvas 也不画），hero 回到居中栈
+        hero.classList.remove('hero--desk');
+        hero.classList.add('hero--stack');
+        return;
+      }
+      hero.classList.add('hero--desk');
+      hero.classList.remove('hero--stack');
+
+      // ① 屏：头像嵌进 canvas 的 CRT 屏（DOM 对齐屏矩形，canvas 的 bezel 留在四周）
+      const sc = d.crt.screen;
+      s.setProperty('--crt-screen-x', `${sc.x}px`);
+      s.setProperty('--crt-screen-y', `${sc.y}px`);
+      s.setProperty('--crt-screen-w', `${sc.w}px`);
+      s.setProperty('--crt-screen-h', `${sc.h}px`);
+      // 屏下 bezel（chin）：Press START 一行丝印（左侧起，给右侧电源灯留位）
+      const chinY = sc.y + sc.h;
+      s.setProperty('--crt-chin-x', `${d.crt.x + 8}px`);
+      s.setProperty('--crt-chin-w', `${Math.max(24, d.crt.w - 24)}px`);
+      s.setProperty('--crt-chin-y', `${chinY}px`);
+      s.setProperty('--crt-chin-h', `${Math.max(8, d.crt.stand.neck.y - chinY)}px`);
+
+      // ② 卡带：立在桌面上（底边 = 桌沿），x = deskSpec.cartXs
+      const step = d.cartXs[1] !== undefined ? d.cartXs[1] - d.cartXs[0]! : 30;
+      s.setProperty('--cart-bottom', `${h - d.desk.top}px`);
+      s.setProperty('--cart-step', `${Math.max(12, step)}px`);
+      carts.forEach((c, i) => {
+        const x = d.cartXs[i];
+        if (x !== undefined) c.style.setProperty('--cart-x', `${x}px`);
+      });
+
+      // ③ 铭牌（h1/tagline/intro + 读数）：**左栏文字**（工位住右半屏）——
+      // 左缘 = 容器左缘（实测，跟断点/最大宽走），宽度 = 桌面宽（两块等宽、隔空相对）。
+      const cont = hero.querySelector<HTMLElement>('.container');
+      const left = Math.round((cont ?? hero).getBoundingClientRect().left);
+      const right = left + (d.desk.x1 - d.desk.x0);
+      const bottomVp = Math.min(d.crt.y, d.lamp.head) - 8;
+      const hr = hero.getBoundingClientRect();
+      // hero 现在是**第二屏**（ADR-0027）：工位固定在视口坐标，所以铭牌按
+      // 「hero 顶对齐视口顶」那一刻对齐桌面（bottomVp 是视口 y，与 hr.top 无关）。
+      s.setProperty('--plate-left', `${left}px`);
+      s.setProperty('--plate-w', `${Math.max(160, right - left)}px`);
+      s.setProperty('--plate-bottom', `${Math.round(hr.height - bottomVp)}px`);
+
+      hero.classList.remove('hero--boot');
+      // resize 后 scrollY 未必变但 hero 顶偏移会变：跟章平移量要一并刷新
+      syncScene();
+    };
+
+    /** 工位淡入淡出 + 跟章平移（alpha 公式与 BgFx.drawWorld 的 deskAlpha 逐字同源） */
+    const syncScene = () => {
+      const r = hero.getBoundingClientRect();
+      // 工位住的是**这一章**（ADR-0027）：两侧对称淡入淡出（顶对齐满亮，进出各淡 0.5 屏）
+      const a = Math.max(
+        0,
+        Math.min(1, 1 - Math.abs(r.top) / Math.max(1, r.height * 0.5))
+      );
+      hero.style.setProperty('--scene-a', String(a));
+      // 工位 DOM 层（fixed 的 .hero-scene / .hero-cta）与 canvas 工位同源跟章：
+      // 同一个 hero 顶偏移（取整），CSS 里 translateY(var(--scene-y))。
+      // 滚动中途两套坐标一起动，工位与铭牌不再互相漂移（2026-10-01 散架修复）。
+      hero.style.setProperty('--scene-y', `${Math.round(r.top)}px`);
+      hero.classList.toggle('hero--scene-off', a < 0.05);
+    };
+
+    try {
+      apply();
+      syncScene();
+      addEventListener('resize', apply, { passive: true });
+      addEventListener('scroll', syncScene, { passive: true });
+      addEventListener('load', apply, { once: true });
+    } finally {
+      // 任何异常都不把内容留在隐藏态（坐标错位也比永久看不见好）
+      hero.classList.remove('hero--boot');
+    }
+  }
+</script>
+
+<script>
+  import { planSequence, revealPolygon, splitGraphemes } from '../../lib/typewriter';
+  import type { GlyphBox, RowBand } from '../../lib/typewriter';
+
+  const root = document.documentElement;
+  const host = document.querySelector<HTMLElement>('#hero .hero-text');
+  const lines = Array.from(
+    document.querySelectorAll<HTMLElement>('#hero [data-tw-line]')
+  );
+  /**
+   * 一行量出的几何。**三套坐标系分开存，绝不能混用**（2026-09-11 两次踩坑）：
+   *  ① `clip-path` 的坐标以**元素自身** border box 为参考（`width` / `rows` / `boxes`）；
+   *  ② 光标是 host 的绝对定位子元素 → host padding box 相对量（`lefts`/`tops`/`heights`）；
+   *  ③ 一次性量的**绝对视口坐标**只能在同一帧内相减。
+   *  把 ③ 拿去减「每帧新取的 hostBox」会错位（实测错 68px = 整整一行）：
+   *  中间发生了滚动（首页翻页脚本把 hero 顶从 0 推到 60）与入场动画位移
+   *  （hero-rise 的 translateY(8px)）。
+   */
+  interface LineBox {
+    el: HTMLElement;
+    /** 字素总数（跨文本节点拍平后的计数） */
+    count: number;
+    /** 裁切参考：元素宽（px） */
+    width: number;
+    /** 裁切参考：视觉行带（相对元素 border box） */
+    rows: RowBand[];
+    /** 裁切参考：每个字素在元素内的左/右边界与行号 */
+    boxes: GlyphBox[];
+    /** 光标参考：每个字素的左边界（相对 host padding box） */
+    lefts: number[];
+    /** 光标参考：每个字素打印完后的右边界（相对 host padding box） */
+    rights: number[];
+    /** 光标参考：字格顶 / 高（相对 host padding box） */
+    tops: number[];
+    heights: number[];
+  }
+
+  /** 拍平元素内的**所有**文本节点，逐字素列出（同 pixel-grid.spec.ts 的手法）。
+   *  为什么不假设单一文本节点：将来若往 h1/intro 里加 <strong>/<a>，
+   *  旧的「childNodes.length === 1」写法会**静默**降级成不打字。 */
+  function flatGraphemes(el: HTMLElement): { node: Text; offset: number; text: string }[] {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const out: { node: Text; offset: number; text: string }[] = [];
+    let n: Node | null;
+    while ((n = walker.nextNode())) {
+      const t = n as Text;
+      for (const g of splitGraphemes(t.data)) {
+        out.push({ node: t, offset: g.index, text: g.text });
+      }
+    }
+    return out;
+  }
+
+  let caret: HTMLElement | null = null;
+  let raf = 0;
+
+  /** 立即揭幕并收尾（幂等；异常路径、resize、打完都走这里） */
+  function finish() {
+    cancelAnimationFrame(raf);
+    for (const el of lines) el.style.removeProperty('clip-path');
+    if (caret) caret.hidden = true;
+    root.dataset.tw = 'done';
+  }
+
+  /** 是否可量：至少有一个非空白文本节点。不满足就整场降级为静态显示。 */
+  function measurable(el: HTMLElement): boolean {
+    return (el.textContent ?? '').trim().length > 0;
+  }
+
+  /**
+   * 量一行：逐字素边界 + 视觉行带（与 tests/e2e/pixel-grid.spec.ts 同源手法：Range 取单字几何）。
+   * **支持多行**（intro 在桌面就是 2 行）：裁切形状见 `revealPolygon()`。
+   */
+  function measure(el: HTMLElement): LineBox | null {
+    if (!host) return null;
+    const glyphs = flatGraphemes(el);
+    if (!glyphs.length) return null;
+    const hb = host.getBoundingClientRect();
+    // host 的 padding box 原点（绝对定位子元素的坐标原点就是这里，不是 border box）
+    const ox = hb.left + host.clientLeft;
+    const oy = hb.top + host.clientTop;
+    const box = el.getBoundingClientRect();
+    const range = document.createRange();
+
+    // 视觉行：整段文字的 client rects（每行一个矩形）
+    range.selectNodeContents(el);
+    const rows: RowBand[] = [...range.getClientRects()]
+      .filter((r) => r.width > 1)
+      .map((r) => ({ top: r.top - box.top, bottom: r.bottom - box.top }));
+
+    const boxes: GlyphBox[] = [];
+    const lefts: number[] = [];
+    const rights: number[] = [];
+    const tops: number[] = [];
+    const heights: number[] = [];
+    for (const g of glyphs) {
+      range.setStart(g.node, g.offset);
+      range.setEnd(g.node, g.offset + g.text.length);
+      const r = range.getBoundingClientRect();
+      // 归行：取与该字素垂直重叠最多的视觉行
+      let row = 0;
+      let best = -Infinity;
+      rows.forEach((b, i) => {
+        const ov = Math.min(b.bottom, r.bottom - box.top) - Math.max(b.top, r.top - box.top);
+        if (ov > best) {
+          best = ov;
+          row = i;
+        }
+      });
+      boxes.push({ left: r.left - box.left, right: r.right - box.left, row });
+      lefts.push(r.left - ox);
+      rights.push(r.right - ox);
+      tops.push(r.top - oy);
+      heights.push(r.height);
+    }
+    return {
+      el,
+      count: glyphs.length,
+      width: box.width,
+      rows,
+      boxes,
+      lefts,
+      rights,
+      tops,
+      heights,
+    };
+  }
+
+  function ensureCaret(): HTMLElement {
+    if (!caret) {
+      caret = document.querySelector<HTMLElement>('#hero .tw-caret');
+      if (!caret) throw new Error('缺少 #hero .tw-caret');
+      caret.hidden = false;
+    }
+    return caret;
+  }
+
+  /** 把光标放到「下一个要打的字」的位置。行内换行与跨行（intro 两行）都自然成立：
+   *  x 取下一个字素的左边界，y 取它的字格顶 —— 它落在哪一行就跟到哪一行。 */
+  function moveCaret(boxes: LineBox[], lineIdx: number, printed: number) {
+    const c = ensureCaret();
+    const lb = boxes[lineIdx]!;
+    const n = lb.count;
+    const i = Math.min(printed, n - 1);
+    const x = printed === 0 ? lb.lefts[0]! : lb.rights[printed - 1]!;
+    const h = Math.round(lb.heights[i]!);
+    c.style.width = `${Math.max(4, Math.round(h * 0.5))}px`;
+    c.style.height = `${h}px`;
+    c.style.transform = `translate(${Math.round(x)}px, ${Math.round(lb.tops[i]!)}px)`;
+  }
+
+  /** 异常一律降级为静态显示：打字机是装饰，绝不能把首屏文字留在裁切态或报错 */
+  function safe(fn: () => void): void {
+    try {
+      fn();
+    } catch {
+      finish();
+    }
+  }
+
+  function run() {
+    if (!host || !lines.length) return finish();
+    // 前置校验：不满足就静态显示（深链 / 滚动恢复 / 结构变了都不打）
+    if (!lines.every(measurable)) return finish();
+    if (document.querySelector('#hero')!.getBoundingClientRect().top < -8) return finish();
+
+    const boxes = lines.map(measure);
+    if (boxes.some((b) => !b)) return finish();
+    const geo = boxes as LineBox[];
+    const texts = lines.map((el) => el.textContent ?? '');
+    const plan = planSequence(texts);
+    // 时间线长度必须与实量到的字素数一致，否则宁可不打（不猜、不裁错）
+    if (plan.lines.some((l, i) => l.segments.length !== geo[i]!.count)) return finish();
+    const t0 = performance.now();
+
+    const frame = (now: number) => {
+      try {
+        step(now);
+      } catch {
+        finish();
+      }
+    };
+    const step = (now: number) => {
+      const t = now - t0;
+      // 逐行推进裁切（时间线已在纯函数里算好，这里只做「到点就推」）
+      let active = -1; // 第一个还没打完的行
+      let printed = 0;
+      for (let li = 0; li < plan.lines.length; li++) {
+        const lp = plan.lines[li]!;
+        const lb = geo[li]!;
+        let n = 0;
+        while (n < lp.offsets.length && lp.offsets[n]! <= t) n++;
+        if (n >= lb.count) {
+          // 本行打完 → 立刻撤掉本行裁切（不是等全部打完）。
+          // 除了「已完成的元素不该再挂着裁切」，还有一个实测理由：
+          // 带 clip-path 的元素在 Chrome 眼里一直不算「已绘制」，h1 是本站 LCP 元素——
+          // 若等到最后一行打完才揭幕，LCP 会被拖到 2.4s；逐行揭幕则回到 ~0.4s。
+          lb.el.style.removeProperty('clip-path');
+          continue;
+        }
+        lb.el.style.setProperty('clip-path', revealPolygon(lb.width, lb.rows, lb.boxes, n));
+        if (active === -1) {
+          active = li;
+          printed = n;
+        }
+      }
+      if (active === -1) return finish(); // 全部打完 → 揭幕 + 撤光标
+      moveCaret(geo, active, printed);
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+  }
+
+  if (!host || !lines.length) {
+    finish();
+  } else {
+    // 接管（内联兜底计时器从此失效）
+    root.dataset.tw = 'on';
+    // 必须显式 load()：document.fonts.ready 在字体尚未被请求时就会 resolve，
+    // 用它量边界会拿到**回退字体**的前进量 → 裁在半字形上。
+    // 超时（字体没就绪）就**不打字**：宁可静态显示，也不用错的边界硬打
+    // （2026-09-11 反例实测：延迟子集 woff2 800ms，旧实现确实按回退字体裁了字）。
+    const FONT_WAIT_MS = 400;
+    let fontsOk = false;
+    const fonts = Promise.all([
+      document.fonts.load('32px Zpix'),
+      document.fonts.load('14px Zpix'),
+    ]).then(
+      () => {
+        fontsOk = true;
+      },
+      () => undefined
+    );
+    const timeout = new Promise((r) => setTimeout(r, FONT_WAIT_MS));
+    /** 打字机只在这一章进视口时才打（ADR-0027：hero 是第二屏，加载时它在屏外）。
+     *  已经在视口里（深链 / bfcache 回页 / 窄屏一屏放得下）就直接打。 */
+    const whenVisible = (fn: () => void) => {
+      const el = document.getElementById('hero');
+      if (!el || !('IntersectionObserver' in window)) return fn();
+      const r = el.getBoundingClientRect();
+      if (r.top < window.innerHeight * 0.6 && r.bottom > 0) return fn();
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            io.disconnect();
+            fn();
+            return;
+          }
+        },
+        { threshold: 0.5 }
+      );
+      io.observe(el);
+    };
+    Promise.race([fonts, timeout]).then(
+      () => {
+        if (!fontsOk) return finish();
+        whenVisible(() => safe(run));
+      },
+      () => finish()
+    );
+    // resize 会让已量边界失效 → 立刻收尾（宁可静态，也不要裁错位置）
+    addEventListener('resize', finish, { passive: true });
+  }
+</script>
+
+{/* 实况读数更新（ADR-0020）：时刻每 30s 刷（作者城市时区）；天气与 BgFx 共享
+    同一次 Open-Meteo 请求（weather.ts 模块级单例去重）。失败静默保持占位词。 */}
+<script>
+  import { siteWeather } from '../../lib/config';
+  import { getLiveWeather, weatherFx, type WeatherKind } from '../../lib/weather';
+  import { debugNow, debugWeatherKind } from '../../lib/debug';
+
+  const timeEl = document.querySelector<HTMLElement>('[data-live-time]');
+  const wxEl = document.querySelector<HTMLElement>('[data-live-wx]');
+  /** 实况天气（未到达 = null）。调试覆写的判定基准：读数与 BgFx 同一函数同一输入 */
+  let liveWx: WeatherKind | null = null;
+  const tickLive = () => {
+    if (!timeEl) return;
+    // 走 debugNow：做了时间旅行时读数必须跟着场景走，
+    // 否则「LOCAL 14:20 · 星空」这种自相矛盾会当场穿帮。
+    timeEl.textContent =
+      'LOCAL ' +
+      new Intl.DateTimeFormat('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: siteWeather.tz,
+      }).format(new Date(debugNow()));
+  };
+  const tickWx = () => {
+    if (wxEl) wxEl.textContent = weatherFx(debugWeatherKind(liveWx)).label;
+  };
+  tickLive();
+  setInterval(tickLive, 30_000);
+  getLiveWeather(siteWeather).then((live) => {
+    liveWx = live?.kind ?? null;
+    tickWx();
+  });
+  // 调试台（SideDock）改天气 → 立即重刷丝印（否则要等下一次实况到达）
+  window.addEventListener('8bit:wx-debug', tickWx);
+  // 时间旅行 → 立即重刷时刻（30s tick 太慢，读数行要即时反馈）
+  window.addEventListener('8bit:clock-debug', tickLive);
+</script>
 
 <style>
   .hero {
@@ -38,35 +528,316 @@ import { siteConfig, url } from '../../lib/config';
   .hero-inner {
     position: relative;
     z-index: 1;
+    /* 纸条 → 无底（2026-09-21 作者二轮反馈：纸条仍是「底色 + 框」，更丑）。
+       最终形态：**文字完全裸坐景上，零底色零框**，只用像素标题的正宗画法——
+       1px 八向描边 + 2px 硬投影（投影色 = --c-panel，永远与文字反极性：
+       亮档白影托黑字、暗档黑影托亮字，在云上/山上都成立）。
+       AA 账：tagline/intro 从 dim 色提为 --color-text（dim 灰在亮天空上必然破线），
+       文字块整体上移到天空带内（不压山）；hero-contrast 的像素实测是裁判。
+       契约从「实底」换成「硬投影 + 反极性」，不再有 alpha 断言。 */
     display: flex;
-    align-items: center;
-    gap: 2rem;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-top: 1.5rem;
   }
 
+  /* ---------- 窗边工位（T10）：默认 = 窄屏居中栈（无 JS 也成立） ----------
+     所有像素几何由脚本从 deskSpec/windowSpec 写进 `--crt-*` / `--cart-*` /
+     `--plate-*` 变量；这里只消费变量、不重复推导任何几何常量。 */
+  .hero-scene {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .crt-avatar {
+    display: inline-flex;
+    line-height: 0;
+  }
+
+  /* 坐标变量就绪前先藏住（防「居中栈 → 工位」跳位）；内联兜底 1.2s 自动揭幕 */
+  .hero--boot .hero-inner,
+  .hero--boot .hero-scene {
+    visibility: hidden;
+  }
+
+  /* 桌面档：静物层钉在视口坐标（与 canvas 画的工位同坐标，同一 deskSpec），
+     再按 --scene-y（= hero 顶偏移，与 BgFx 的 heroShiftY 同源同值）整体平移 ——
+     工位跟章节一起滚，滚动中途与铭牌锁定同一画面；alpha 随世界淡出（--scene-a）。 */
+  .hero--desk .hero-scene {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    margin: 0;
+    pointer-events: none;
+    opacity: var(--scene-a, 1);
+    transform: translateY(var(--scene-y, 0px));
+    animation: none;
+  }
+  .hero--desk .crt-avatar {
+    position: absolute;
+    left: var(--crt-screen-x, 0px);
+    top: var(--crt-screen-y, 0px);
+    width: var(--crt-screen-w, 0px);
+    height: var(--crt-screen-h, 0px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* 屏内嵌：终端（CrtTerminal 的 figure）恰好填 screen 矩形，去壳
+     （canvas 的 bezel 留在四周，4px 插画壳在工位档退场）。终端屏面自身
+     width/height 176×156 逻辑基准，被 figure 拉伸填满实际屏矩形。 */
+  .hero--desk .crt-avatar :global(figure) {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .hero--desk .crt-avatar :global(pre) {
+    width: 100%;
+    height: 100%;
+  }
+  /* Press START 收进屏下 bezel（chin）作一行丝印；右侧给 canvas 的电源灯留位 */
+  .hero--desk .crt-label {
+    position: absolute;
+    left: var(--crt-chin-x, 0px);
+    top: var(--crt-chin-y, 0px);
+    width: var(--crt-chin-w, 0px);
+    height: var(--crt-chin-h, 0px);
+    margin: 0;
+    line-height: var(--crt-chin-h, 16px);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  /* 铭牌（左栏文字）：绝对定位在桌面物件之上的墙区 —— 左缘 = 容器左缘、
+     宽 = 桌面宽（工位住右半屏，ADR-0027），底边停在桌面物件之上。
+     去掉纸条化遗留的内衬（无盒无框），可读性仍由描边 + 反极性硬投影承担。 */
+  .hero-scroll {
+    display: none;
+  }
+
+  @media (max-width: 560px) {
+    .hero-scroll {
+      display: block;
+      position: absolute;
+      left: 50%;
+      bottom: 2.25rem;
+      transform: translateX(-50%);
+      margin: 0;
+      font-size: 0.75rem;
+      line-height: 16px;
+      letter-spacing: var(--ls-12);
+      color: var(--color-text-dim);
+      animation: hero-scroll-bob 2.4s steps(2, end) infinite;
+    }
+    .hero-scroll__arrow {
+      display: inline-block;
+      color: var(--c-accent);
+    }
+  }
+
+  /* 两档整数位移（0 / 3px）：像素语言里位移就是「跳一格」，不用缓动 */
+  @keyframes hero-scroll-bob {
+    0%,
+    49.9% {
+      transform: translate(-50%, 0);
+    }
+    50%,
+    100% {
+      transform: translate(-50%, 3px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-scroll {
+      animation: none;
+    }
+  }
+
+  .hero--desk .hero-inner {
+    position: absolute;
+    left: var(--plate-left, 0px);
+    width: var(--plate-w, 100%);
+    bottom: var(--plate-bottom, 0px);
+    margin-top: 0;
+    z-index: 3;
+  }
+  .hero--desk h1 {
+    padding: 0 0 8px;
+    margin-bottom: 12px;
+    /* 铭牌下缘一条 1px 结构线（Zpix 丝印下划线，线语言：1px） */
+    border-bottom: 1px solid var(--c-line);
+  }
+  .hero--desk .tagline {
+    margin: 0 0 0.9rem;
+  }
+  .hero--desk .intro {
+    max-width: none;
+    margin: 0;
+  }
+  .hero--desk .hero-status {
+    margin: 1.1rem 0 0;
+    padding: 0;
+  }
+
+  /* 卡带（DOM）：立在桌面上，底边 = 桌沿、x = deskSpec.cartXs。
+     样式沿用面板语言：1px 结构线 + 2px accent 受光带；窄屏回退成横排像素按钮。 */
+  .hero--desk .hero-cta {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    margin: 0;
+    display: block;
+    pointer-events: none;
+    opacity: var(--scene-a, 1);
+    transform: translateY(var(--scene-y, 0px));
+    animation: none;
+  }
+  .hero--desk .hero-cta .cart {
+    position: absolute;
+    left: var(--cart-x, 0px);
+    bottom: var(--cart-bottom, 0px);
+    width: calc(var(--cart-step, 30px) - 4px);
+    padding: 6px 0 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--c-panel);
+    border: 1px solid var(--c-line);
+    border-top: 2px solid var(--c-accent);
+    box-shadow: none;
+    color: var(--c-text);
+    font-size: 0.75rem;
+    line-height: 1;
+    letter-spacing: 0;
+    text-decoration: none;
+    pointer-events: auto;
+    transition: background-color 0.12s linear, border-color 0.12s linear;
+  }
+  .hero--desk .hero-cta .cart > span {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+  .hero--desk .hero-cta .cart:hover,
+  .hero--desk .hero-cta .cart:focus-visible {
+    background-color: color-mix(in srgb, var(--c-accent) 16%, var(--c-panel));
+    border-color: var(--c-accent);
+    text-decoration: none;
+  }
+
+  /* 主行动（2026-10-29 colorize）：首屏三盘卡带原是同规格「都是入口」，
+     扫读上没有主次。把「阅读博客」（站点本体）点亮成实心暖色卡带，
+     其余两盘保持未点亮 —— 也是 hover 态语言的静态版（同色系，不新造色）。 */
+  .hero--desk .hero-cta .cart--primary {
+    background-color: var(--c-accent);
+    border-color: var(--c-accent);
+    color: var(--c-bg);
+  }
+  .hero--desk .hero-cta .cart--primary:hover,
+  .hero--desk .hero-cta .cart--primary:focus-visible {
+    background-color: color-mix(in srgb, var(--c-accent) 82%, var(--c-text));
+    color: var(--c-bg);
+  }
+
+  /* 滚出首屏：DOM 工位随世界淡尽后不再拦截点击 */
+  .hero--scene-off .hero-scene,
+  .hero--scene-off .hero-cta {
+    visibility: hidden;
+  }
+
+  /* 窄屏（JS 给的 hero--stack，或 JS 未接管时的 media query）居中栈 */
+  .hero--stack .hero-inner {
+    align-items: center;
+    text-align: center;
+  }
+  .hero--stack h1,
+  .hero--stack .tagline,
+  .hero--stack .intro,
+  .hero--stack .hero-status {
+    margin-left: 0;
+  }
+  .hero--stack .hero-cta {
+    justify-content: center;
+  }
+
+  /* 像素标题描边：八向 1px 描边（包住字隙）+ 右下 2px 硬投影（经典像素标题字）。
+     全部 hero 文字统一——kicker / 站况 / 实况（丝印）也不例外。 */
+  .hero-inner h1,
+  .hero-inner .tagline,
+  .hero-inner .intro,
+  .hero-inner .kicker,
+  .hero-inner .hero-status,
+  .hero-inner .hero-live {
+    text-shadow:
+      1px 0 0 var(--c-panel), -1px 0 0 var(--c-panel), 0 1px 0 var(--c-panel),
+      0 -1px 0 var(--c-panel), 1px 1px 0 var(--c-panel), -1px -1px 0 var(--c-panel),
+      1px -1px 0 var(--c-panel), -1px 1px 0 var(--c-panel),
+      3px 3px 0 var(--c-panel);
+  }
   .kicker {
     margin: 0 0 0.75rem;
-    font-size: 0.65rem;
-    color: var(--gb-2);
+    font-size: 0.75rem;
+    line-height: 16px;
+    /* 坐景上：对比由描边硬投影承担，街机感由闪烁 + 字距承担。 */
+    color: var(--color-text-dim);
     letter-spacing: 0.15em;
     animation: blink 1.6s steps(2, start) infinite;
   }
 
+  /* 标题离散两档（24/32px）而非流体 clamp：像素字下只有整数档能配精确字距修正，
+     clamp 会在 24~32px 间产生连续小数尺寸（对格无从谈起）。
+     窄屏降到 24px 防溢出（原 clamp 下限就是 1.5rem，行为等价）。 */
   h1 {
-    font-size: clamp(1.5rem, 6vw, 2rem); /* 窄屏 6vw 收到 1.5rem(24px) 防溢出；上限 2rem(32px)；两端均 4px 步进 */
-    line-height: 1.4;
+    font-size: 2rem; /* 32px */
+    line-height: 36px; /* 4px 阶 */
+    letter-spacing: var(--ls-32);
     margin-bottom: 0.5rem;
+    padding: 8px 16px 6px; /* 纸条内衬 */
   }
 
   .tagline {
-    font-size: 0.7rem;
-    color: var(--gb-2);
+    font-size: 0.875rem;
+    line-height: 20px;
+    /* 坐景上不用 dim：dim 灰在亮天空上必破 AA（09-10 实测 3.41）。
+       层级改由字号/字距承担，不用颜色。 */
+    color: var(--color-text);
     letter-spacing: 0.1em;
-    margin-bottom: 1.5rem;
+    margin: 0 0 0.9rem 4px;
   }
 
   .intro {
     max-width: 34rem;
-    color: var(--color-text-dim);
+    margin: 0 0 0 8px;
+    /* 坐景上同 tagline：用正文结构色，亮度层次由字号承担 */
+    color: var(--color-text);
+  }
+
+  /* 打字机光标：实心方块（复用 CrtTerminal 屏内方块光标 / cursor-fx block 形态的既有语言）。
+     刻意不用 border / outline / box-shadow —— 那会变成线元素、要过慢道与 line-hierarchy 登记。
+     尺寸由脚本按当前行的字格实测注入（h1 32px / tagline 14px 两档自动同高）。
+     打完即撤：hero 不是输入框，常驻光标不再表意，还会抢首屏焦点（铁律③）。 */
+  .hero-text {
+    position: relative;
+  }
+  .tw-caret {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: var(--c-text); /* 前景槽：浅色主题里它是最深色（极性契约） */
+    pointer-events: none;
+    animation: tw-blink 1s steps(2, start) infinite;
+  }
+  .tw-caret[hidden] {
+    display: none;
+  }
+  @keyframes tw-blink {
+    50% {
+      opacity: 0;
+    }
   }
 
   .actions {
@@ -76,19 +847,85 @@ import { siteConfig, url } from '../../lib/config';
     margin-top: 1.75rem;
   }
 
-  /* 首屏 CTA 放大（仅 hero，卡片内 VIEW 保持原尺寸不变） */
-  .actions .pixel-btn {
-    padding: 0.75rem 1.25rem;
-    font-size: 0.8rem;
+  /* CTA 横排：纸条化后没有右列可用，按钮回到标题下面一行（手机上本就是横排）。 */
+  .hero-cta {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    margin-top: 1.35rem;
   }
 
-  @media (max-width: 640px) {
+  .hero-cta .pixel-btn {
+    text-align: center;
+  }
+
+  /* 实况读数：丝印，直接坐景上，描边硬投影由上方的统一规则提供。
+     仍钉住 nowrap：动态文本（每 30s 刷）不许折行跳。 */
+  .hero-live {
+    margin: 0.75rem 0 0;
+    font-size: 0.75rem;
+    line-height: 16px;
+    letter-spacing: var(--ls-12);
+    color: var(--color-text-dim);
+    white-space: nowrap;
+  }
+
+  /* 站况读数：一条窄纸条（丝印 --color-text-dim，与 .kicker 同级，不抢正文）。
+     只用既有 token，零新颜色。 */
+  .hero-status {
+    margin: 1.1rem 0 0 8px; /* 纸条错落：与 intro 同级 */
+    display: flex;
+    gap: 2rem;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    line-height: 16px;
+    color: var(--color-text-dim);
+  }
+  .hero-status__row {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .hero-status dt {
+    font-size: 0.75rem;
+    line-height: 16px;
+    letter-spacing: var(--ls-12);
+    color: var(--color-text-dim);
+  }
+  .hero-status dd {
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  /* 首屏 CTA 放大（仅 hero，卡片内 VIEW 保持原尺寸不变） */
+  .hero-cta .pixel-btn {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.875rem; /* 行高/字距沿用 .pixel-btn（1.4 / 0.08em tracking） */
+  }
+
+  @media (max-width: 900px) {
     .hero-inner {
-      flex-direction: column;
+      align-items: center;
       text-align: center;
     }
-    .actions {
+    .hero-inner h1,
+    .hero-inner .tagline,
+    .hero-inner .intro,
+    .hero-inner .hero-status {
+      margin-left: 0; /* 居中档不错落 */
+    }
+    .hero-cta {
       justify-content: center;
+    }
+  }
+
+  /* 窄屏标题降一档（原 clamp 下限就是 1.5rem），字距随之换档 */
+  @media (max-width: 640px) {
+    h1 {
+      font-size: 1.5rem; /* 24px */
+      line-height: 28px;
+      letter-spacing: var(--ls-24);
     }
   }
 
@@ -98,25 +935,19 @@ import { siteConfig, url } from '../../lib/config';
     }
   }
 
-  /* 首屏载入错峰（reduced-motion 走全局动画禁用） */
+  /* 首屏载入错峰（reduced-motion 走全局动画禁用）
+     注：这里曾有一组 `.hero-text > :nth-child(1..5) { animation-delay }`，**是死规则**——
+     只给了 delay、没给 animation-name，而真正跑动画的是 `.hero-inner > *`，
+     所以那 5 条从未生效（2026-09-11 打字机改造时实查 `getComputedStyle` 确认）。
+     删掉它还有第二个理由：`.hero-text` 现在多了打字机光标（第 5 个子元素），
+     那组规则一旦被「修好」会把光标也推下 8px。 */
+  /* fill 用 backwards 不用 both：forwards 填充会让最后一帧的 transform:none
+     永远压在级叠上（CSS 动画赢过 inline style），hero 离场视差（index.astro 往
+     .hero-text/.hero-status/.hero-live 写 inline translateY）会被静默杀掉。
+     backwards 下入场期间关键帧照常生效，结束后回到自然值（opacity 1 / 无 transform），
+     渲染零差异。 */
   .hero-inner > * {
-    animation: hero-rise 0.32s steps(3) both;
-  }
-
-  .hero-text > :nth-child(1) {
-    animation-delay: 0.05s;
-  }
-  .hero-text > :nth-child(2) {
-    animation-delay: 0.1s;
-  }
-  .hero-text > :nth-child(3) {
-    animation-delay: 0.15s;
-  }
-  .hero-text > :nth-child(4) {
-    animation-delay: 0.2s;
-  }
-  .hero-text > :nth-child(5) {
-    animation-delay: 0.25s;
+    animation: hero-rise 0.32s steps(3) backwards;
   }
 
   @keyframes hero-rise {

@@ -34,7 +34,12 @@ export default defineConfig({
   },
   webServer: {
     command: 'npm run preview',
-    env: { PORT: String(PREVIEW_PORT) },
+    // astro 7 的 `astro preview` 在检测到「agent 环境」（am-i-vibing：CI / AI CLI 下
+    // isRunByAgent() 为真）时会**自动转后台守护进程并让 CLI 立即退出**，
+    // 于是 playwright 报 "Process from config.webServer exited early"、e2e 全挂 ——
+    // 作者在普通终端跑 npm test 不受影响，agent 跑必挂（2026-09-29 实踩）。
+    // 该变量本是守护子进程的自标记；预置它 = 跳过 agent 自动转后台，强制前台运行。
+    env: { PORT: String(PREVIEW_PORT), ASTRO_PREVIEW_BACKGROUND: '1' },
     // 必须 127.0.0.1 而非 localhost：preview 只绑 IPv4，而 Windows 上 localhost 先解析为 ::1，
     // Chrome 不回退 → ECONNREFUSED（2026-09-03 实踩）
     url: `http://127.0.0.1:${PREVIEW_PORT}`,

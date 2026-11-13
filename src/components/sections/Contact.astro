@@ -1,8 +1,45 @@
 ---
-import { siteConfig } from '../../lib/config';
+import { siteConfig, siteWeather } from '../../lib/config';
+import { iconSvgInner, type IconName } from '../../lib/pixel-icons';
 
 // 仅渲染已配置（value 非空）的站外链接
 const links = siteConfig.social.filter((link) => link.value !== '');
+
+/** 渠道图注（homepage-optimization-v1 · A2）：只写已核实的事实句，无硬编——
+ *  GitHub 公开仓数核实于 2026-10-01 GitHub API（4 个，本站在列）；
+ *  Bilibili 仅放已核实昵称（内容/频率拿不到可核实数据，事实句待作者补给后加回）；
+ *  Email 陈述渠道本身（mailto 直达，无表单中转）。
+ *  键 = social.label（按钮同序同源，label 改名必须跟）；原 CHANNELS 纯罗列行
+ *  移除——三条图注已含渠道信息，罗列冗余。 */
+const CAPTIONS: Record<string, string> = {
+  GitHub: '开源仓 4 个 · 本站源码在列',
+  Email: 'QQ 邮箱 · 直达收件箱',
+  bilibili: 'Matt酱です',
+};
+const channelRows = links
+  .filter((link) => CAPTIONS[link.label])
+  .map((link) => ({ k: link.label.toUpperCase(), v: CAPTIONS[link.label]! }));
+
+/** 渠道图标（B3，作者批准推荐组）：label → 图标名（与 CAPTIONS 同一条 label 契约，
+ *  无图标的渠道按钮退化为纯文字）。渲染 = 15×15 整数格行程合并 rect，accent 单色。 */
+const ICONS: Record<string, IconName> = {
+  GitHub: 'github',
+  Email: 'email',
+  bilibili: 'bilibili',
+};
+
+/** 按钮行预计算：config 链接 + 图标 + 图注一次对齐，模板零查找 */
+const linkRows = links.map((link) => ({
+  link,
+  icon: ICONS[link.label],
+}));
+
+/** 丝印元数据：渠道图注在前（贴按钮），时区在后 */
+const meta = [
+  ...channelRows,
+  // Asia/Shanghai 无夏令时：UTC+8 是常量，不用运行时换算
+  { k: 'TIMEZONE', v: `UTC+8 · ${siteWeather.label}` },
+];
 ---
 
 <section id="contact">
@@ -14,7 +51,7 @@ const links = siteConfig.social.filter((link) => link.value !== '');
       <p>想聊 AI 驱动的自动化 / 工程化 / 数据管道，或只想逛逛实验场？从下面找我：</p>
       <ul class="links">
         {
-          links.map((link) => (
+          linkRows.map(({ link, icon }) => (
             <li>
               <a
                 class="pixel-btn"
@@ -23,8 +60,28 @@ const links = siteConfig.social.filter((link) => link.value !== '');
                 rel="noopener noreferrer"
                 data-sfx-role="click"
               >
-                {link.label}
+                {icon && (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 15 15"
+                    shape-rendering="crispEdges"
+                    aria-hidden="true"
+                    set:html={iconSvgInner(icon, 'var(--c-accent)')}
+                  />
+                )}
+                <span>{link.label}</span>
               </a>
+            </li>
+          ))
+        }
+      </ul>
+      <ul class="meta">
+        {
+          meta.map((m) => (
+            <li>
+              <span class="meta-k text-pixel">{m.k}</span>
+              <span class="meta-v">{m.v}</span>
             </li>
           ))
         }
@@ -34,6 +91,11 @@ const links = siteConfig.social.filter((link) => link.value !== '');
 </section>
 
 <style>
+  /* 与 About 同口径（2026-10-30 W2·S1）：面板铺满 wide 容器，正文收在阅读宽度 */
+  .pixel-panel p {
+    max-width: var(--w-prose);
+  }
+
   .links {
     display: flex;
     flex-wrap: wrap;
@@ -41,5 +103,39 @@ const links = siteConfig.social.filter((link) => link.value !== '');
     list-style: none;
     margin: 1.25rem 0 0;
     padding: 0;
+  }
+  /* 图标 + 文字横排（仅 contact 渠道按钮；hero 卡带等其他 pixel-btn 不受影响） */
+  .links .pixel-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* 丝印元数据：与 About 的同款两栏（键 Zpix / 值正文），1px 结构线分隔，
+     无底色无框 —— 密度来自行，不来自装饰层（texture-budget 口径） */
+  .meta {
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0.9rem 0 0;
+    border-top: 1px solid var(--c-line);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.75rem;
+    line-height: 16px;
+  }
+  .meta li {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .meta-k {
+    color: var(--color-text-dim);
+    letter-spacing: var(--ls-12);
+  }
+  .meta-v {
+    color: var(--color-text);
+    letter-spacing: normal;
   }
 </style>

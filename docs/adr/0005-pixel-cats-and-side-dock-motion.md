@@ -88,3 +88,13 @@
 - 自我否定三问：①氛围来自背景？**否**（猫是前景丝印，仓是结构件）。②去掉背景仍有结构感？
   **是**（焊盘阴影/4px 网格/母线边框独立）。③元素独立表意？**是**（猫=装饰，仓=容器）。
   → **通过，可动工。**
+
+## 附录（2026-10-29）：skill 迁移，本文的安装路径已失效
+
+本文 §一 记录的安装位置 `~/.agents/skills/`（28 份 SKILL.md：4 styleseed + 24 animation-principles）
+已在 2026-10-29 合并为单一 skill `~/.pi/agent/skills/webdesign/`；原文件归档于
+`~/.skills-archive/20261029-1448-webdesign-merge/`。**本文的裁决与落点表不受影响**（Silk 种子、
+禁第三方库、振幅/周期预算、reduced-motion 豁免全部照旧），但后续引用请改为：
+
+- 通用方法论 → 全局 skill `webdesign`（`references/motion.md` / `references/a11y.md`）
+- 本站运动词汇 → `docs/specs/motion-vocab.md`（原 `ap-motion-vocab` 的本站裁剪内容已并入）

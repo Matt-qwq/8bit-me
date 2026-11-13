@@ -1,74 +1,64 @@
 /* ==========================================================================
-   8bit-me global styles
-   Design tokens: GB palette (Game Boy 四色) + pixel font + base styles
+   8bit-me global styles —— 「夜晚房间」（ADR-0021 + 2026-09-23 退役附录）
+   颜色唯一数据源 = src/lib/themes.ts（单档 DARK），五槽色值由 BaseLayout
+   构建期生成 :root 色块注入 —— 本文件**不保留色值副本**（曾因副本陈旧
+   让 --c-panel 漂移出第二套真相：两档时代被 :root[data-mode] 特异性压住
+   看不见，单档后按级联顺序反而赢了）。窗外世界照常跟太阳晨昏。
+   界面语法 = 天空的语法：色带、地平线细线、大气透视层级；不再有 CRT / PCB。
    ========================================================================== */
 
-/* 统一像素字体：Zpix（最像素，SolidZORO，免费可商用，需署名声明）。
-   全站唯一像素字体——含英文/中文/日文/符号，故不设 unicode-range，
-   英文也走 Zpix（作者决策：不同像素字体混排影响观感，统一用 Zpix）。
-   ttf 自托管（未转 woff2：本机无 fonttools，体积 7.2MB 为全量代价，
-   后续可子集化本站用字压缩）。Press Start 2P 已弃用。 */
-@font-face {
-  font-family: 'Zpix';
-  font-style: normal;
-  font-weight: 400;
-  font-display: block;
-  /* 子集化 woff2 优先（scripts/subset-font.mjs 产出），全量 ttf 作 fallback 防掉字 */
-  src: url('/fonts/zpix.subset.woff2') format('woff2'),
-    url('/fonts/zpix.ttf') format('truetype');
-}
-
 /* --- Design tokens ------------------------------------------------------- */
-/* 默认主题 = SMS Surf（世嘉蓝橙浪）：
-   - 无 data-theme（禁用 JS / 无存储记录 / 脏数据）时由 :root 直接落地
-     sms-surf 四色，渲染期零闪烁（防 FOUC）
-   - 有 data-theme 时命中下方「13 套主题」块，四色被覆盖 */
+/* 五槽（--c-bg/panel/line/accent/text）由 BaseLayout 注入，这里只留语义别名；
+   别名指向 var(--c-*)，与注入块无重叠 —— 单一数据源不产生第二份真相。 */
 :root {
-  /* SMS Surf —— 默认四色（gb0=#0e1526 gb1=#182337 gb2=#3f86e6 gb3=#e9edf7） */
-  --gb-0: #0e1526; /* 最深色：页面背景 */
-  --gb-1: #182337; /* 深色：面板 / 边框 */
-  --gb-2: #3f86e6; /* 强调：accent / 装饰 */
-  --gb-3: #e9edf7; /* 浅色：正文 / 主文本 */
-
-  /* 语义别名（保持四色内，派生色用 color-mix 计算） */
-  --color-bg: var(--gb-0);
-  --color-accent: var(--gb-2);
-  --color-text: var(--gb-3);
-  --color-text-bright: var(--gb-3);
-  --color-text-dim: color-mix(in srgb, var(--gb-3) 82%, var(--gb-0));
-  --color-border: var(--gb-2);
-
-  /* CRT overlay 扫描线 / 压暗色：取 --gb-3（对比色槽）而非背景槽，
-     浅色主题（nes-punch/inkpaper）下也可见；无 color-mix 回退见文件底部 @supports
-     08-31 板级评审：「扫描线 vs PCB 走线两层线纹打架」→ 扫描线 35%→18%，走线成唯一线性主角 */
-  --crt-scan: color-mix(in srgb, var(--gb-3) 18%, transparent);
-  --crt-vignette: color-mix(in srgb, var(--gb-3) 45%, transparent);
+  /* 语义别名（组件层统一用语义名；五槽是物理槽） */
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-line: var(--c-line);
+  --color-accent: var(--c-accent);
+  --color-text: var(--c-text);
+  --color-text-bright: var(--c-text);
+  /* 次级文字 = text 84% 混底（2026-10-29 由 78% 上调：impeccable 检测器在蓝面板上
+     命中 8 处 gray-on-color——层级没错，但 78% 在彩色底上读作「洗白」；
+     84% 仍是明显的次级层级，对比度单测口径同步更新） */
+  --color-text-dim: color-mix(in srgb, var(--c-text) 84%, var(--c-bg));
 
   /* 字体 */
-  /* 统一像素字体：全站（英文+中文）只走 Zpix，系统黑体仅作最后兜底。
-     作者决策：不同像素体混排割裂观感，故弃用 Press Start 2P。 */
-  /* 关抗锯齿保像素锐利：像素字是位图网格，灰度抗锯齿会抹糊硬边。
-     image-rendering:pixelated 对文本无效（字体走矢量光栅化），故只用 smoothing 控制。 */
-  font-smooth: never;
-  -webkit-font-smoothing: none;
-  text-rendering: optimizeSpeed;
+  /* 标识语言 = Zpix（标题/导航/按钮/标签/丝印）——它是像素画世界的题字；
+     正文语言 = 系统黑体（2026-09 决策 U1，维持不变）。
+     字距修正 token（--ls-*）只配 Zpix 元素：Zpix 的 CJK 前进量是 13/12 em，
+     每档用 letter-spacing 把有效前进量修到整数，防逐字取整抖动。 */
   --font-pixel: 'Zpix', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Noto Sans SC', sans-serif;
-  --font-body: 'Zpix', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', 'Noto Sans SC', 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB',
+    'Noto Sans SC', 'Source Han Sans SC', 'Helvetica Neue', Arial, sans-serif;
   --font-heading: var(--font-pixel);
   --font-mono: 'Consolas', 'Courier New', ui-monospace, monospace;
 
-  /* 布局 */
-  --content-max: 42rem;
+  /* 布局：宽度阶梯——容器宽 ≠ 文字行宽（陈列要宽、阅读要窄） */
+  --w-prose: 42rem;
+  --w-wide: 56rem;
+  /* 兼容旧引用（BgFx scrim 加深带等）：跟随陈列列宽 */
+  --content-max: var(--w-wide);
   --nav-height: 3.5rem;
-  --step: 4px; /* 像素单位步进 */
-}
+  --step: 4px;
+  /* Zpix 字距修正（仅 Zpix 元素）：16px→17.0 / 14px→15.0 / 18px→19.0 / 20px→21.0 /
+     32px→34.0；12/24/48 本就是整数，取 0。正文（系统黑体）一律 normal。 */
+  --ls-12: 0px;
+  --ls-14: -0.166667px;
+  --ls-16: -0.333333px;
+  --ls-18: -0.5px;
+  --ls-20: -0.666667px;
+  --ls-24: 0px;
+  --ls-32: -0.666667px;
+  --ls-48: 0px;
+  --sb-size: 16px; /* 像素滚动条宽/高 = 4 × --step（≤560px 降 12px） */
+  --sb-thumb-min: calc(var(--sb-size) * 2);
 
-/* --- 13 套主题（data-theme 切换） --------------------------------
-   主题色块由 src/lib/themes.ts 单一数据源生成（BaseLayout 注入），
-   本文件不再手写。每块只重定义 --gb-0..3；语义别名（--color-*）
-   统一由下方 :root 派生，主题切换时经 var() 链路自动跟随。 */
+  /* 墙面：唯一装饰层——极淡的水平色带（echo 窗外天空的色带语法）。
+     极性契约：取 text 槽（与底色对比的槽），两档模式都可见；强度 4% 恒低于可读干扰。 */
+  --wall-band: color-mix(in srgb, var(--c-text) 4%, transparent);
+}
 
 /* --- Reset & base -------------------------------------------------------- */
 *,
@@ -80,22 +70,36 @@
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  scrollbar-gutter: stable;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  /* relative：bg-fx 可读性 scrim（内容流内绝对层）以 body 为定位祖先，bottom:0 才锚到页尾 */
   position: relative;
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-body);
-  /* 正文 clamp 锁底 14px（像素字 <14px 笔画并死）、默认 16px（舒适基线）；行高 1.7 防像素字黏连 */
-  font-size: clamp(14px, 1vw + 0.5rem, 16px);
-  line-height: 1.7;
-  letter-spacing: 0.5px;
-  /* clip 而非 hidden：hidden 会把 body 变成滚动容器，破坏 html 上的 scroll-snap */
+  font-size: 16px;
+  line-height: 28px;
+  letter-spacing: normal;
   overflow-x: clip;
+  /* 短页把 footer 压到底（2026-10-29）：/lab 与 /404 内容不到一屏，旧模型下
+     footer 浮在屏幕中间、下面挂一截空背景。main 吃剩余高度即可，
+     首页六屏都是 min-height:100vh，不受影响。 */
+  display: flex;
+  flex-direction: column;
+}
+
+main#main {
+  flex: 1 0 auto;
+}
+
+@media (max-width: 560px) {
+  body {
+    font-size: 14px;
+    letter-spacing: normal;
+  }
 }
 
 img,
@@ -104,8 +108,20 @@ svg {
   image-rendering: pixelated;
 }
 
-/* 作者决策（2026-08-31）：全站统一用 Zpix 像素字体（含英文），
-   不再区分中英，避免两种像素体混排割裂观感。 */
+/* 墙面色带（唯一装饰层）：固定视口、内容之下，替代旧 PCB 斜网格 + CRT 扫描线。
+   水平节奏 = 天空色带的空间频率（约 8 行/屏），对比度 ≤1.2:1（装饰预算内）。 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -4;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 116px,
+    var(--wall-band) 116px 120px
+  );
+}
 
 h1,
 h2,
@@ -114,30 +130,41 @@ h4 {
   margin: 0 0 0.75em;
   font-family: var(--font-heading);
   font-weight: 400;
-  /* 标题紧凑聚拢显分量（负字距 + 紧行高），与正文疏朗形成层级节奏 */
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  /* 标题断行取平衡：同宽下不让标题末行只剩一两个字（Chrome/Safari 支持，
+     其余浏览器忽略 = 退回普通断行，无回退风险） */
+  text-wrap: balance;
 }
 
-/* type scale：8 倍数（12/16/24/32/48），天然贴 8px 网格 */
+/* type scale：8 倍数（12/16/24/32/48）；行高取 4px 阶 */
 h1 {
   font-size: 3rem; /* 48px */
+  line-height: 56px;
+  letter-spacing: var(--ls-48);
 }
 
 h2 {
-  font-size: 2rem; /* 32px */
+  font-size: 1.5rem; /* 24px */
+  line-height: 28px;
+  letter-spacing: var(--ls-24);
 }
 
 h3 {
-  font-size: 1.5rem; /* 24px */
+  font-size: 1.25rem; /* 20px */
+  line-height: 28px;
+  letter-spacing: var(--ls-20);
 }
 
 h4 {
   font-size: 1rem; /* 16px */
+  line-height: 20px;
+  letter-spacing: var(--ls-16);
 }
 
 p {
   margin: 0 0 1em;
+  /* 正文断行取 pretty：只优化末行，避免「GitHub。」这种末行孤字
+     （impeccable 检测器 straggler 规则实测命中 skills 尾注） */
+  text-wrap: pretty;
 }
 
 a {
@@ -146,18 +173,45 @@ a {
 }
 
 a:hover {
-  color: var(--color-accent);
+  color: var(--color-text-bright);
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 a:focus-visible,
 button:focus-visible {
-  outline: 3px solid var(--gb-3);
+  outline: 2px solid var(--c-accent);
   outline-offset: 2px;
 }
 
 ::selection {
-  background-color: var(--gb-3);
-  color: var(--gb-0);
+  background-color: var(--c-accent);
+  color: var(--c-bg);
+}
+
+/* 跳转链接：平时在视口外，聚焦时落到左上（键盘用户的第一个 Tab 停靠点） */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: 0;
+  transform: translateY(-200%);
+  z-index: 60;
+  padding: 0.6rem 1rem;
+  background-color: var(--c-panel);
+  color: var(--c-text);
+  border: 2px solid var(--c-accent);
+  font-size: 0.75rem;
+  letter-spacing: var(--ls-12);
+  line-height: 20px;
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0.5rem);
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
 }
 
 /* 像素感工具类 */
@@ -169,57 +223,32 @@ button:focus-visible {
   color: var(--color-text-dim);
 }
 
-/* 主题切换的 CRT 眨眼过渡（ThemeToggle 切主题时加 class） */
-html.theme-flash body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  pointer-events: none;
-  background-color: var(--gb-3);
-  animation: theme-flash 0.22s steps(4, end) both;
-}
-
-@keyframes theme-flash {
-  0% {
-    opacity: 0;
-  }
-  25% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 0;
-  }
-  75% {
-    opacity: 0.4;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-/* 卡片入场（index 页脚本用 WAAPI 逐卡 stagger-cascade）。
-   元素先由 JS 加 .reveal-card 设为隐藏，避免滚动到位前已可见导致闪烁；
-   WAAPI 的 fill:both 在动画结束后保持终态，覆盖此 opacity:0。
-   注意：用 WAAPI 而非 CSS transition，故不受 reduced-motion 的 !important 压制，
-   与 .ptrans-host 同样按作者意愿对减少动画偏好豁免。 */
+/* 卡片/章节内容入场（index 页脚本用 WAAPI 逐元素 stagger-cascade；一性次揭示不重放） */
 .reveal-card {
   opacity: 0;
 }
 
-/* 内容宽度容器：width 100% + max-width（兼容旧浏览器，
-   不用 calc 乘法/max-width 之外的 min() 首参） */
+/* 内容宽度容器 */
 .container {
   width: 100%;
-  max-width: var(--content-max);
+  max-width: var(--w-wide);
   margin-inline: auto;
   padding-inline: calc(var(--step) * 3);
 }
 
+/* 阅读容器（2026-10-30 W2·S1）：宽度收窄到 --w-prose，但**左缘对齐 wide 脊柱**。
+   旧写法靠 margin-inline:auto 居中 → about/contact/lab/404/文章页的标题左缘在 388，
+   而 projects/skills 在 274：单页滚动时脊柱每换一节就横跳 114px。
+   现在窄容器从 wide 容器的左缘起排，右侧留白——和 hero 的左侧文字同一条竖线。 */
+.container--prose {
+  max-width: var(--w-prose);
+  margin-inline-start: max(0px, calc((100% - var(--w-wide)) / 2));
+  margin-inline-end: auto;
+}
+
 /* --- 可访问性 / 降级 ------------------------------------------------ */
-/* 注意：作者系统开启“减少动态效果”，全站动画被此块系统性压制。
-   page transition（.ptrans-host）是作者明确要求的核心体验，予以豁免；
-   其余装饰动画维持压制。 */
+/* 作者系统开启“减少动态效果”：全站动画被此块系统性压制。
+   page transition（.ptrans-host）与首屏打字机是作者明确要求的核心体验，予以豁免。 */
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -233,23 +262,16 @@ html.theme-flash body::after {
   }
 }
 
-/* 旧浏览器 / 无 color-mix 支持时退回到四色内近似值 */
+/* 旧浏览器 / 无 color-mix 支持：dim 固定近似值 + 墙面退化为无装饰 */
 @supports not (color: color-mix(in srgb, red 50%, blue)) {
   :root {
-    /* 无 color-mix：--color-text-dim 固定近似值 + CRT 层回退 GB 绿 */
-    --color-text-dim: #7d9b2e;
-    --crt-scan: rgba(15, 56, 15, 0.18);
-    --crt-vignette: rgba(15, 56, 15, 0.45);
+    --color-text-dim: #9aa2c0;
+    --wall-band: transparent;
   }
 }
 
-/* --- 高对比模式（Windows forced-colors）---------------------------
-   像素描边/box-shadow/扫描层在 forced-colors 下被 UA 清除，此处显式兜底：
-   清掉所有装饰阴影与扫描层，正文靠系统 CanvasText/Canvas 色保证可读。
-   纯装饰伪元素（.pp-pad 角点 / ::before 丝印）已由 aria-hidden，此处一并隐去。 */
+/* --- 高对比模式（Windows forced-colors）--------------------------- */
 @media (forced-colors: active) {
-  .crt-overlay,
-  .pp-pad,
   body::before {
     display: none !important;
   }
@@ -274,111 +296,123 @@ html.theme-flash body::after {
 }
 
 /* --- 像素 UI 通用件 ------------------------------------------------ */
-/* 像素盒子工具类：用 inset box-shadow 描边（避免 border 抗锯齿发虚）。
-   结构件，非装饰——强化容器边界而不引入背景纹样（铁律：氛围来自结构）。 */
+/* 像素盒子工具类：1px 结构线描边 */
 .px-box {
-  box-shadow: inset 0 0 0 1px var(--gb-1);
-}
-/* 电路化试点（v6，作者思路：线用电替代，界面即电路板；8px 网格、单强调色 --gb-2） */
-:root {
-  --tx-rail: color-mix(in srgb, var(--gb-2) 68%, transparent);
-  --tx-trace: color-mix(in srgb, var(--gb-2) 38%, transparent);
-  --tx-dim: color-mix(in srgb, var(--gb-3) 22%, transparent);
-  --tx-grid: color-mix(in srgb, var(--gb-3) 6%, transparent);
+  box-shadow: inset 0 0 0 1px var(--c-line);
 }
 
-/* 基板走线网格（v6 骨架）：body 背后极淡 45° 双网格，PCB 基板纹理，非 canvas 装饰层 */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  pointer-events: none;
-  background:
-    repeating-linear-gradient(45deg, transparent 0 30px, var(--tx-grid) 30px 32px),
-    repeating-linear-gradient(-45deg, transparent 0 30px, var(--tx-grid) 30px 32px);
+/* --- 像素滚动条（双导轨 + 游标）---------------------------------------
+   保留这件小装置：轨道两侧 2px 导轨线，游标 = 空芯框，通电填实。
+   形状/面积变化表达状态，不靠色相翻转（--c-accent 与 --c-bg 在两档模式下恒 ≥3:1）。 */
+*::-webkit-scrollbar {
+  width: var(--sb-size);
+  height: var(--sb-size);
 }
-
-/* 硬边像素面板：冲压铭牌语言——4px 实边框 + 四角定位点（.pp-pad 真实子元素）。
-   去 PCB 满铺纹理与 L 角焊盘（作者嫌角标丑，2026-08-31 裁决重选媒介）。
-   角点由 index.astro 运行时注入，入场用 WAAPI 点亮（伪元素不可动画）。 */
-.pixel-panel {
-  border: 4px solid var(--color-border);
-  background-color: color-mix(in srgb, var(--gb-1) 55%, var(--gb-0));
+*::-webkit-scrollbar-track {
+  background-color: var(--c-bg);
+}
+*::-webkit-scrollbar-track:vertical {
   box-shadow:
-    inset 4px 4px 0 color-mix(in srgb, var(--gb-3) 10%, transparent),
-    4px 4px 0 color-mix(in srgb, var(--gb-1) 70%, transparent);
+    inset 2px 0 0 var(--c-line),
+    inset -2px 0 0 var(--c-line);
+}
+*::-webkit-scrollbar-track:horizontal {
+  box-shadow:
+    inset 0 2px 0 var(--c-line),
+    inset 0 -2px 0 var(--c-line);
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--c-bg);
+  box-shadow: inset 0 0 0 2px var(--c-accent);
+  min-height: var(--sb-thumb-min);
+  min-width: var(--sb-thumb-min);
+}
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active {
+  background-color: var(--c-accent);
+}
+*::-webkit-scrollbar-corner {
+  background-color: var(--c-bg);
+}
+*::-webkit-scrollbar-button {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  :root {
+    --sb-size: 12px;
+  }
+}
+
+/* Gecko / 无 ::-webkit-scrollbar 的引擎：两色回退 */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-color: var(--c-accent) var(--c-bg);
+  }
+}
+
+/* --- 面板：受光面（替代旧「冲压铭牌」）---------------------------------
+   卡片 = 屋里被照亮的家具：1px 地平线描边 + 受光面板底 + 2px 硬边落影（剪影层）。
+   顶缘 2px 强调色 = 「地平线受光」——每张卡自己的一条日出线。 */
+.pixel-panel {
+  border: 1px solid var(--c-line);
+  border-top: 2px solid var(--c-accent);
+  background-color: var(--c-panel);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--c-line) 45%, transparent);
   padding: calc(var(--step) * 6) calc(var(--step) * 7);
   position: relative;
 }
 
-/* 四角定位点：8×8 实心方点（--gb-2）+ ≥2px --gb-0 隔离环。
-   低对比主题（amber/ember/gold）靠 --gb-0 环保证可读，不引第五色。 */
-.pp-pad {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  background: var(--gb-2);
-  box-shadow: 0 0 0 2px var(--gb-0);
-  pointer-events: none;
-  z-index: 1;
-}
-.pp-pad.tl { top: 8px; left: 8px; }
-.pp-pad.tr { top: 8px; right: 8px; }
-.pp-pad.bl { bottom: 8px; left: 8px; }
-.pp-pad.br { bottom: 8px; right: 8px; }
-
-/* 像素按钮：hover 时内叠 45° 信号线纹理（边界仍实，指尖可见） */
+/* 像素按钮：受光面 + 通电态（面积变化：底边受光带点亮） */
 .pixel-btn {
   display: inline-block;
   padding: 0.6rem 1rem;
-  border: 4px solid var(--gb-3);
-  color: var(--gb-3);
-  background-color: transparent;
+  border: 1px solid var(--c-line);
+  color: var(--c-text);
+  background-color: var(--c-panel);
   font-family: var(--font-pixel);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   line-height: 1.4;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   cursor: pointer;
-  box-shadow:
-    4px 4px 0 color-mix(in srgb, var(--gb-1) 80%, transparent),
-    inset 0 0 0 2px var(--gb-2); /* 内层 bezel，与面板双线同构（实心 accent，默认主题下可读） */
-  transition: background-color 0.05s linear, color 0.05s linear;
+  /* 硬投影满强线色（C1，2026-10-01）：填充与所在卡同色是「未点亮=空芯」的状态语言，
+     浮起感全靠这道 2px 硬投影——45% 半强时几乎隐形（contact CTA 读作 inert 的根因） */
+  box-shadow: 2px 2px 0 var(--c-line);
+  transition: background-color 0.05s linear, color 0.05s linear,
+    border-color 0.05s linear;
 }
 
 .pixel-btn:hover {
-  background-color: var(--gb-3);
-  color: var(--gb-0);
-  border-color: var(--gb-2);
+  background-color: color-mix(in srgb, var(--c-accent) 16%, var(--c-panel));
+  border-color: var(--c-accent);
+  color: var(--c-text);
   box-shadow:
-    4px 4px 0 color-mix(in srgb, var(--gb-1) 80%, transparent),
-    inset 0 0 0 2px var(--gb-2),
-    inset 0 -3px 0 var(--gb-2); /* 通电底边：物理反馈替代纹理 */
+    2px 2px 0 var(--c-accent),
+    inset 0 -3px 0 var(--c-accent);
 }
 
 .pixel-btn:active {
   transform: translate(2px, 2px);
-  box-shadow: inset 0 0 0 2px var(--gb-2);
+  box-shadow: inset 0 -2px 0 var(--c-accent);
 }
 
-/* 全站角落开关按钮（CRT / SFX / BgFx / Cursor / Theme）已迁到 SideDock
-   （侧边折叠仓），由仓的 flex 布局统一接管定位。这里只保留视觉基础。 */
+/* 全站角落开关按钮（SFX / BgFx / Cursor / Mode）在 SideDock 仓内。 */
 .fx-toggle {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.65rem;
-  font-size: 0.55rem;
-  background-color: var(--gb-0);
+  font-size: 0.75rem;
+  line-height: 16px;
+  background-color: var(--c-panel);
 }
 
-/* off 态统一在全站表达（各开关组件不再各自覆盖）：
-   由 CrtOverlay.apply() 与各开关的 apply 同步 .off 类驱动 */
+/* off 态统一表达 */
 .fx-toggle.off {
   opacity: 0.65;
   color: var(--color-text-dim);
-  border-color: color-mix(in srgb, var(--gb-1) 60%, var(--gb-0));
+  border-color: color-mix(in srgb, var(--c-line) 60%, var(--c-bg));
   box-shadow: none;
 }
 
@@ -387,18 +421,11 @@ body::before {
 }
 
 .fx-toggle .icon {
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   line-height: 1;
 }
 
-@media (max-width: 560px) {
-  .fx-toggle {
-    font-size: 0.5rem;
-  }
-}
-
-/* 封面像素盒（cover block）：列表与单篇共用一份；外形走冲压铭牌语言，
-   角点复用 .pp-pad（运行时注入），与 .pixel-panel 同构。 */
+/* 封面像素盒（cover block）：列表与单篇共用一份 */
 .cover-block {
   position: relative;
   display: flex;
@@ -408,47 +435,28 @@ body::before {
   gap: 0.5rem;
   width: 100%;
   aspect-ratio: 1;
-  border: 4px solid var(--gb-2);
-  background-color: color-mix(in srgb, var(--gb-1) 45%, var(--gb-0));
-  color: var(--gb-3);
-}
-/* 封面角点尺寸与面板一致，但占位更小（封面无文字压角，可更贴近边） */
-.cover-block .pp-pad {
-  width: 8px;
-  height: 8px;
+  border: 1px solid var(--c-line);
+  background-color: color-mix(in srgb, var(--c-line) 22%, var(--c-panel));
+  color: var(--c-text);
 }
 
 a.cover-block:hover {
-  background-color: color-mix(in srgb, var(--gb-1) 70%, var(--gb-0));
-}
-
-.cover-glyph {
-  font-size: 1.75rem;
-  line-height: 1;
+  background-color: color-mix(in srgb, var(--c-line) 40%, var(--c-panel));
+  border-color: var(--c-accent);
 }
 
 .cover-block.lg {
-  /* 5rem → 6rem（2026-09）：解「单篇 lg 盒 < 列表 md 拇指图」悖论——
-     单篇头部与列表卡片同尺寸（镜像 .card grid 6rem/1fr），点过的图在目的地
-     同尺寸再现，承接感最强；lg 仅单篇页使用，不影响列表页。 */
   width: 6rem;
 }
 
-.cover-block.lg .cover-glyph {
-  font-size: 2rem;
-}
-
 .cover-tag {
-  font-size: 0.45rem;
-  color: var(--gb-2);
+  font-size: 0.75rem;
+  line-height: 16px;
+  color: var(--color-text-dim);
   letter-spacing: 0.1em;
 }
 
 @media (max-width: 560px) {
-  .cover-glyph {
-    font-size: 1.25rem;
-  }
-  /* 窄屏降级：封面缩至 4rem，镜像列表卡 <560px 时的 4rem 列宽 */
   .cover-block.lg {
     width: 4rem;
   }
@@ -456,14 +464,16 @@ a.cover-block:hover {
 
 /* 像素标签（.tag）：Projects / blog 列表 / blog 单篇共用一份 */
 .tag {
-  font-size: 0.55rem;
-  color: var(--gb-2);
-  border: 2px solid var(--gb-1);
+  font-size: 0.75rem;
+  line-height: 16px;
+  color: var(--color-text);
+  border: 1px solid var(--c-line);
+  background-color: color-mix(in srgb, var(--c-line) 14%, transparent);
   padding: calc(var(--step) * 0.5) calc(var(--step) * 2);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-12);
 }
 
-/* section 标题：像素字体 + 编号装饰 */
+/* section 标题：像素字体 + 编号丝印 */
 .section-title {
   display: flex;
   align-items: baseline;
@@ -471,72 +481,93 @@ a.cover-block:hover {
   margin-block: 2.5rem 1.25rem;
 }
 
+/* 页面主标题用 h1 语义，视觉尺度跟随章节标题档 */
+h1.section-title {
+  font-size: 1.5rem; /* 24px */
+  line-height: 28px;
+  letter-spacing: var(--ls-24);
+}
+
 .section-title .num {
-  color: var(--gb-2);
-  /* 丝印化：编号=芯片丝印标注（55% 底，跨主题可读） */
-  border: 1px solid color-mix(in srgb, var(--gb-2) 60%, transparent);
-  background: color-mix(in srgb, var(--gb-1) 55%, transparent);
-  padding: calc(var(--step) * 1.5) calc(var(--step) * 3);
-  font-size: 0.85rem;
+  /* 2026-10-29（impeccable colorize）：由「accent 描边字 + 面板底」改为**实心 stamp**。
+     理由：全站强调色占屏实测 0.1–1.3%，金线只当点缀；章节号是唯一天然重复的锚点，
+     填实后每章开头都有一个同规格的暖块，扫读节奏变清楚（仍是单一强调色纪律）。
+     文字取 --c-bg（深底）+ 12.9:1 对比，比原来「金字压蓝面板」更实。 */
+  color: var(--c-bg);
+  border: 1px solid var(--c-accent);
+  background: var(--c-accent);
+  padding: calc(var(--step) * 1) calc(var(--step) * 3);
+  font-size: 0.875rem;
+  line-height: 20px;
   letter-spacing: 0.14em;
   transform: translateY(-2px);
   position: relative;
 }
 
-/* 丝印芯片的 pin-1 朝向点：左上角 accent 方块（呼应 PCB 极性标记） */
-.section-title .num::before {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: -4px;
-  width: 6px;
-  height: 6px;
-  background: var(--gb-3);
-  box-shadow: 0 0 0 1px var(--gb-0);
-}
-
-/* 锚点停靠 = 整屏翻页停靠：section 顶贴视口顶，与 wheel 翻页、logo(#main)、
-   自然加载三处完全同一种对齐（sticky nav 悬停在 section 顶部空白留白区，
-   不遮内容——各 section 内容均垂直居中，顶部 nav 高度内为空）。
-   曾写 calc(var(--nav-height) + 0.5rem)：#hero 被压到 scrollY=0（nav 下方），
-   #main 落在 60 —— 同一内容两个位（2026-09 作者反馈），故归零。 */
+/* 章节锚点停靠：顶对齐视口（nav sticky 占流，章节内容垂直居中不会被 nav 压住）。
+   **不能用 scroll-margin-top 修**（2026-10-30 W1·N2 第一版就是这么写的，被
+   nav-links / site-hud 两条既有守卫打回）：本站的停靠语义是「章节顶贴视口顶」
+   （翻页脚本 + HUD 门控都依赖它），抬高 scroll-margin 会让章节落在 80px 处。
+   真正的病根在下面那行 padding-block —— 见 main#main > section[id]。 */
 section {
   scroll-margin-top: 0;
 }
 
-/* 整屏翻页式 PPT（作者指定：严格硬切，一次滚动=翻一屏，绝不卡在半截）。
-   仅作用于首页 5 个带 id 的 section（博客/404 无 section[id]）。
-   每屏严格 100dvh；内容高于一屏时由内部 .container 自行滚动，
-   不影响整屏翻页节奏。翻页由 index.astro 的 JS 驱动（确定性、可测，
-   保证“硬切”手感），不依赖原生 scroll-snap（headless/不同浏览器手感不稳）。
-   footer 已不再是翻页 slide（2026-08-31 改为底部普通页脚）。 */
+/* 首页章节（2026-09 拆 fullpage 翻页骨架，回归原生连续滚动）：
+   min-height = 至少一屏；内容高于一屏时自然撑开——旧 `height:100dvh + overflow:hidden`
+   与容器 `max-height/overflow-y:auto` 内滚 hack 是被退役的「第三种滚动行为」，
+   全页现在只有一条文档滚动条。justify-content:center 保留短章节的垂直居中。 */
 main#main > section[id] {
-  height: 100dvh;
-  overflow: hidden;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   justify-content: center;
-}
-main#main > section > .container {
-  max-height: 100dvh;
-  overflow-y: auto;
+  /* 对称留出 nav 高度 + 一档呼吸（2026-10-30 W1·N2）：
+     - 短章节内容居中，上下等量内边距 → 视觉位置**零位移**；
+     - 高过一屏的章节（#projects 两行卡片、窄屏下的 #skills）内容从 padding 顶起排，
+       标题不再被 sticky nav 压住（旧值 0 时实测标题顶边 56 / nav 底边 57）。 */
+  padding-block: calc(var(--nav-height) + 1.5rem);
 }
 
-/* skill 像素条 */
+/* 章节标题受光带扫入（A5：CRT 光束 steps() DNA 降到元素级）：
+   2px accent 下划线，默认（无 JS）满宽可见；首页脚本揭示标题时用 WAAPI
+   以 steps(n) 整齿从左扫入（齿数 = 宽度/16，reveal-motion.ts 计算）。
+   只挂首页章节（main#main > section[id] > .container）——blog/lab/404 的
+   h1.section-title 不带这条，不受影响。线语言合规：2px、token 色、零新常驻装饰层。 */
+main#main > section[id] > .container .section-title {
+  position: relative;
+}
+main#main > section[id] > .container .section-title::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -0.5rem;
+  height: 2px;
+  width: 100%;
+  background-color: var(--c-accent);
+}
+
+/* skill 像素条：未点亮 = 描边空格，点亮 = 强调色填实 */
+/* 8 段等分铺满可用宽（2026-10-30 W4·S2）：旧写法每段写死 1rem，
+   整条只有 156px，和右侧分数之间留出 490px 死区。现在段宽随列伸缩，
+   上限 20rem —— 再宽每段就成横条，读不出「一格 = 一档」。 */
 .skill-bar {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: var(--step);
+  /* 定宽而不是 width:100%：父列是 auto 轨道，100% 在里面会解成 0（条整个消失，
+     2026-10-30 实测——守卫当时也没抓住，因为它只量了「条右缘到分数」的距离）。 */
+  width: 20rem;
+  max-width: 100%;
 }
 
 .skill-bar i {
-  width: 1rem;
   height: 1rem;
   background-color: transparent;
-  /* 未点亮段 = 描边空格，像电平表的空槽（结构件，不靠装饰） */
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--gb-1) 70%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c-line) 70%, transparent);
 }
 
 .skill-bar i.on {
-  background-color: var(--gb-3);
-  box-shadow: inset 0 0 0 2px var(--gb-3);
+  background-color: var(--c-accent);
+  box-shadow: inset 0 0 0 2px var(--c-accent);
 }

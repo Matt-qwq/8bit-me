@@ -10,7 +10,7 @@
  *
  * 行为约定：
  * - 仅桌面鼠标设备（hover+fine）启用；触屏跳过（原生触摸交互）。
- * - 随主题配色（--gb-0/--gb-2/--gb-3，MutationObserver 跟随 13 套主题）；
+ * - 随主题配色（--c-bg/--c-accent/--c-text，MutationObserver 跟随 13 套主题）；
  *   深色主题 additive、浅色退回 source-over（防洗白）。
  * - prefers-reduced-motion：只画静态准星（无尾迹/无脉冲动画）。
  * - 偏好 '8bitme:cursor'（默认开）；关闭 = 恢复原生光标，一切停摆。
@@ -90,7 +90,7 @@
     const rings: Ring[] = [];
     let lastEmit = 0;
 
-    // ---- 配色（fx runtime 提供 palette + additive 门控；[data-theme] 跟随在运行时） ----
+    // ---- 配色（fx runtime 提供 palette + additive 门控） ----
     const host: FxRuntimeHost = {
       getSize: () => ({ width: innerWidth, height: innerHeight }),
       shouldRun: () => useFx() && active,

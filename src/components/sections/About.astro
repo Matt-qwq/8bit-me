@@ -1,5 +1,24 @@
 ---
-import { siteConfig } from '../../lib/config';
+import { siteWeather, url } from '../../lib/config';
+import { getPublishedPosts, formatDate } from '../../lib/posts';
+
+/** 丝印元数据（丝印语言，非正文）：构建期静态算出，与 hero 站况读数同一条数据链 */
+const posts = await getPublishedPosts();
+const latest = posts[0];
+const meta = [
+  { k: 'STACK', v: 'Python · TypeScript · Astro' },
+  {
+    k: 'POSTS',
+    v: latest ? `${posts.length} 篇 · 更新 ${formatDate(latest.data.date)}` : '—',
+  },
+  { k: 'WINDOW', v: `${siteWeather.label} · 晨昏与天气在首屏那扇窗` },
+];
+/** 精选行（homepage-optimization-v1 · A1）：最新 3 篇，标题原文照录、可点进单篇 */
+const featured = posts.slice(0, 3).map((p) => ({
+  href: url(`blog/${p.id}`),
+  date: formatDate(p.data.date),
+  title: p.data.title,
+}));
 ---
 
 <section id="about">
@@ -7,16 +26,99 @@ import { siteConfig } from '../../lib/config';
     <h2 class="section-title"><span class="num text-pixel">01</span><span class="text-pixel">ABOUT</span> <span class="text-dim">关于我</span></h2>
     <div class="pixel-panel">
       <p>
-        我是 {siteConfig.author}，工程化方法论者。近两年在自动化与数据方向，
-        跨多个异构系统实例交付：RPA 迁移、数据管道、无文档系统逆向——
-        三件事的共性，是先钉死事实源，再立可验证的约定，
-        最后收敛成可追溯的体系。
+        这个站记我做自动化与数据工程时碰上的问题：怎么拆、怎么做、
+        做完为什么这样。
       </p>
       <p class="text-dim">
-        这里同时也是 8-bit 实验场：Game Boy 四色、像素字体、CRT 扫描线
-        的克制美学，装方法论与随手实验。日常技术栈：
-        Python / TypeScript / Astro。
+        界面是一间「天光房间」：配色取自窗外的夜色，固定不换；晨昏与天气
+        是窗外的景，不是配色开关。主要用 Python 和 TypeScript。
       </p>
+      <ul class="meta">
+        {
+          meta.map((m) => (
+            <li>
+              <span class="meta-k text-pixel">{m.k}</span>
+              <span class="meta-v">{m.v}</span>
+            </li>
+          ))
+        }
+      </ul>
+      {
+        featured.length > 0 && (
+          <ol class="featured">
+            <li class="featured-head">
+              <span class="meta-k text-pixel">FEATURED</span>
+            </li>
+            {featured.map((f) => (
+              <li>
+                <span class="meta-k text-pixel">{f.date}</span>
+                <a class="meta-v" href={f.href} data-sfx-role="nav" data-sfx-hover>
+                  {f.title}
+                </a>
+              </li>
+            ))}
+          </ol>
+        )
+      }
     </div>
   </div>
 </section>
+
+<style>
+  /* 段落收在阅读宽度内，分隔线与键值行铺满面板（2026-10-30 W2·S1）：
+     面板宽 = wide 容器（与 projects/skills 卡片同宽同右缘），但正文不吃满
+     872px —— 中文长行超过 40 字就开始丢行。 */
+  .pixel-panel p {
+    max-width: var(--w-prose);
+  }
+  /* 丝印元数据：1px 结构线分隔 + 两栏对齐（键 Zpix / 值正文），
+     不加底色不加框 —— 密度来自行，不来自装饰层（texture-budget 口径） */
+  .meta {
+    list-style: none;
+    margin: 1.1rem 0 0;
+    padding: 0.9rem 0 0;
+    border-top: 1px solid var(--c-line);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.75rem;
+    line-height: 16px;
+  }
+  .meta li {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .meta-k {
+    color: var(--color-text-dim);
+    letter-spacing: var(--ls-12);
+  }
+  .meta-v {
+    color: var(--color-text);
+    /* 中文正文不用 Zpix：0.75rem 正文随 .meta 行高 16px（4px 阶） */
+    letter-spacing: normal;
+  }
+  /* 精选行（A1）：与 .meta 同一条 1px 分隔线与键列对齐，
+     行内容是站内导航不是装饰 —— 密度来自行，值 = 可点标题（链接语言交给全局 a 规则） */
+  .featured {
+    list-style: none;
+    margin: 1.1rem 0 0;
+    padding: 0.9rem 0 0;
+    border-top: 1px solid var(--c-line);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.75rem;
+    line-height: 16px;
+  }
+  .featured li {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .featured li a {
+    color: var(--color-text);
+  }
+</style>

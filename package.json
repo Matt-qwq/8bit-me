@@ -14,13 +14,15 @@
     "astro": "astro",
     "test:unit": "vitest run",
     "test:e2e": "npm run build && playwright test",
-    "test": "npm run test:unit && npm run test:e2e"
+    "test": "npm run test:unit && npm run test:e2e",
+    "audit:type": "node scripts/type-audit.mjs"
   },
   "dependencies": {
     "astro": "^7.2.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/fontkit": "^2.0.9",
     "@types/node": "^26.3.0",
     "fontkit": "^2.0.4",
     "typescript": "^5.9.0",

@@ -103,3 +103,22 @@ describe('projects 链接契约', () => {
     }
   });
 });
+
+describe('Nav 性能契约（2026-09 Firefox 毛玻璃卡顿，作者方案 1）', () => {
+  const nav = readFileSync(join(ROOT, 'src/components/Nav.astro'), 'utf-8');
+
+  it('导航不得使用 backdrop-filter（Gecko 毛玻璃每帧压着动画 canvas 重算 = 整帧 23ms/43fps，背景掉帧；FF 实测去掉后 6ms/165fps，Chrome 同样受益）', () => {
+    expect(nav).not.toMatch(/backdrop-filter/);
+  });
+
+  it('导航底色必须完全不透明（2026-10-30 W1·N1：94% 仍让正文逐字透出）', () => {
+    const block = /\.nav\s*\{[^}]*\}/.exec(nav)?.[0] ?? '';
+    const bg = /background-color:\s*([^;]+);/.exec(block)?.[1]?.trim() ?? '';
+    // 允许两种写法：直接吃 --c-bg，或 color-mix 到 100%
+    const opaque = bg === 'var(--c-bg)' || /color-mix\(in srgb, var\(--c-bg\)\s+100%/.test(bg);
+    expect(
+      opaque,
+      `导航底色是「${bg}」——必须 100% 不透明。94% 时平暗场上仍有 ~11 级亮度差，4x 截图里能逐字读出文章正文`
+    ).toBe(true);
+  });
+});

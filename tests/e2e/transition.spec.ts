@@ -1,4 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { mockWeather } from './helpers/mock-weather';
+
+// 天气请求（Open-Meteo）一律 mock：离线可跑 + 零 resource error
+test.beforeEach(async ({ page }) => {
+  await mockWeather(page);
+});
 
 /**
  * 转场 e2e（transition e2e，P2 提取 PageTrans 时补入）：
@@ -14,8 +20,9 @@ test('转场 e2e：点站内链接 → 幕布 → 到位 → 清除，零报错'
 
   await page.goto('/', { waitUntil: 'networkidle' });
 
-  // 作品卡按“章节内翻页”分屏，只有激活子屏可见：先滚到 projects 激活子屏 0
-  const blogLink = page.locator('a[href^="/blog/"]').first();
+  // 作品卡按“章节内翻页”分屏，只有激活子屏可见：先滚到 projects 激活子屏 0。
+  // 锚定 #projects 内取博客链（站内多个区块都有 a[href^="/blog/"]，裸 .first() 会命中谁看 DOM 序）。
+  const blogLink = page.locator('#projects a[href^="/blog/"]').first();
   await page.evaluate(() =>
     document.querySelector('#projects')!.scrollIntoView({ block: 'center' })
   );

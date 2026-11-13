@@ -28,35 +28,25 @@ async function setup(page: import('@playwright/test').Page, path = '/') {
   await page.goto(path);
 }
 
-async function openDock(page: import('@playwright/test').Page) {
-  const isOpen = await page.evaluate(
-    () => document.getElementById('side-dock')?.dataset.open === 'true'
-  );
-  if (!isOpen) await page.click('#side-dock-trigger');
-  await expect(page.locator('#side-dock-panel')).toBeVisible();
-}
+/**
+ * 2026-09-25：右侧 SET 仓（含它的 toggle 按钮）整体只在 DEV 构建存在，生产没有可点的
+ * toggle 了 —— 本文件的 hover/click 用例改用**生产真实存在的**目标（导航链接），
+ * toggle 角色那条随之退役（生产里已无 data-sfx-role="toggle" 的元素）。
+ */
 
-test('hover 角色：悬停 dock 触发器 → 派发 8bit:fx(hover)（此前全站死代码，本节证明已接线）', async ({ page }) => {
+test('hover 角色：悬停导航链接 → 派发 8bit:fx(hover)（证明 data-sfx-hover 已接线）', async ({ page }) => {
   await setup(page);
   const before = await countKind(page, 'hover');
-  await page.hover('#side-dock-trigger');
+  await page.hover('.nav a[href="#about"]');
   await expect.poll(() => countKind(page, 'hover')).toBe(before + 1);
 });
 
-test('toggle 角色：dock 触发器点击 → 派发 8bit:fx(click)', async ({ page }) => {
+test('click 角色：点页脚外链 → 派发 8bit:fx(click)（生产真实存在的 click 角色元素）', async ({ page }) => {
   await setup(page);
   const before = await countKind(page, 'click');
-  await page.click('#side-dock-trigger');
-  await expect.poll(() => countKind(page, 'click')).toBe(before + 1);
-});
-
-test('select 角色：主题项点击 → 派发 8bit:fx(click)', async ({ page }) => {
-  await setup(page);
-  await openDock(page);
-  await page.click('#theme-toggle');
-  await expect(page.locator('#theme-panel')).toBeVisible();
-  const before = await countKind(page, 'click');
-  await page.locator('.theme-item').first().click();
+  const target = page.locator('footer .foot-credit a');
+  await target.scrollIntoViewIfNeeded();
+  await target.click();
   await expect.poll(() => countKind(page, 'click')).toBe(before + 1);
 });
 
@@ -78,12 +68,26 @@ test('game 角色：404 START 点击 → 派发 8bit:fx(click)', async ({ page }
 });
 
 test('SFX 关闭后：点击不再派发 8bit:fx', async ({ page }) => {
-  await setup(page);
-  await openDock(page);
-  await page.click('#sfx-toggle'); // 关掉：关闭瞬间本身应静默（pref 先落，委托后读）
-  const before = await fxCount(page);
-  await page.click('#bgfx-toggle');
-  await expect.poll(() => fxCount(page)).toBe(before);
+  // 生产没有 SFX 开关了（右侧仓只在 DEV 构建），偏好仍从 localStorage 读 —— 直接写键。
+  // 注意不能复用 setup()：它自己的 init script 会 localStorage.clear()，把本用例预置的
+  // sfx=off 抹掉（第一版就这么假红过），所以这里自给自足地装脚本。
+  await page.addInitScript(() => {
+    try {
+      localStorage.clear();
+      localStorage.setItem('8bitme:sfx', 'off');
+    } catch {
+      /* ignore */
+    }
+    const w = window as unknown as { __fx: string[] };
+    w.__fx = [];
+    window.addEventListener('8bit:fx', ((e: CustomEvent) => {
+      w.__fx.push(String(e.detail));
+    }) as EventListener);
+  });
+  await page.goto('/');
+  await page.click('.nav a[href="#about"]');
+  await page.waitForTimeout(400);
+  expect(await fxCount(page), 'sfx 偏好为 off 时仍派发了音效事件').toBe(0);
 });
 
 async function fxCount(page: import('@playwright/test').Page) {

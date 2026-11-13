@@ -29,6 +29,15 @@ export default defineConfig({
   site,
   base,
   output: 'static',
+  markdown: {
+    // ```flow 围栏 = 文章里的字符逻辑图 / 流程图（见 src/pages/blog/[slug].astro 的 pre.flow）。
+    // 必须把它从 Shiki 里排除掉，两个原因（实测）：
+    //   ① Shiki 会把主题色写成 <pre> 的 inline style（background-color:#24292e），站点 CSS 压不过；
+    //   ② 未登记的语言会被静默归一成 plaintext（data-language="plaintext"），
+    //      于是「按围栏语言区分图与代码」根本不可能（试过 remark 插件，Astro 7 需装 @astrojs/markdown-remark，不加依赖）。
+    // 排除后图作为原始围栏输出，颜色/字体完全由站点 CSS 决定（随 13 套主题走）。
+    syntaxHighlight: { type: 'shiki', excludeLangs: ['flow'] },
+  },
   server: {
     // 钉死 IPv4 回环：不设 host 时 Astro 默认 localhost，Windows 上 Node ≥17 优先解析出 ::1，
     // 与残留的 dev 实例（同样绑 ::1）或 IPv4/IPv6 双栈冲突时会抛 EACCES 而非 EADDRINUSE，

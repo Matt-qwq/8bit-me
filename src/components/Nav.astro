@@ -1,6 +1,5 @@
 ---
 import { siteConfig, url } from '../lib/config';
-import CatSprite from './CatSprite.astro';
 
 /**
  * Nav 由 BaseLayout 全站挂载，而 siteConfig.nav 是首页 section 的纯锚点
@@ -21,6 +20,10 @@ const sectionHref = (hash: string) => (isHome ? hash : `${home}${hash}`);
 const blog = url('blog');
 const isBlog =
   Astro.url.pathname === blog || Astro.url.pathname.startsWith(`${blog}/`);
+/** 实验场（/lab）：交互式图册。与博客同理——非首页路由，scrollspy 管不到 */
+const lab = url('lab');
+const isLab =
+  Astro.url.pathname === lab || Astro.url.pathname.startsWith(`${lab}/`);
 ---
 
 <header class="nav">
@@ -41,13 +44,21 @@ const isBlog =
             data-sfx-role="nav" data-sfx-hover>博客</a
           >
         </li>
+        <li>
+          <a
+            href={lab}
+            class:list={[{ 'is-active': isLab }]}
+            aria-current={isLab ? 'page' : undefined}
+            data-sfx-role="nav" data-sfx-hover>实验场</a
+          >
+        </li>
       </ul>
     </nav>
     <!-- 丝印层吉祥物：坐在板边打瞌睡的睡猫（GIF 呼吸动画，2026-08-31 由 pose1 睡姿素材抠透明）。
          刻意不用 <a> 包裹：nav-links.spec.ts 有「全站 a[href^="#"] 目标必须存在」的硬契约，
          装饰元素包成锚点会在 /blog、/404 上炸掉。纯装饰 → alt='' 且不进 tab 序。 -->
     <span class="nav-cat" aria-hidden="true">
-      <img class="nav-cat__img" src="/cats/nav_sleep.gif" alt="" />
+      <img class="nav-cat__img" src={url('/cats/nav_sleep.gif')} alt="" />
     </span>
   </div>
 </header>
@@ -84,8 +95,18 @@ const isBlog =
     position: sticky;
     top: 0;
     z-index: 40;
-    background-color: var(--gb-0);
-    border-bottom: 4px solid var(--gb-2);
+    /* 底色 94%（2026-09 作者方案 1）：曾是 88% + 背景毛玻璃滤镜——
+       Gecko 下导航条压在每帧重绘的窗外世界 canvas 上，毛玻璃每帧对背后那条带重算高斯模糊
+       → 整帧 ~23ms（≈43fps，FF 实测），背景动画肉眼掉帧；Chrome 合成器把这活做得便宜
+       所以一直没暴露。去滤镜 + 底色加浓一档：FF 23ms → 6ms（165fps 满帧），观感对齐原玻璃
+       （截图对比 nav-B vs nav-E）。守卫：tests/unit/nav-contract.spec.ts「导航禁背景滤镜」。 */
+    /* 必须 100% 不透明（2026-10-30 W1·N1）：旧值 94% 让正文从导航底下透出来——
+       平暗场上 6% 的亮度差 = ~11 级，4x 截图里能逐字读出文章正文。
+       不加背景模糊滤镜：模糊违背像素语言。 */
+    background-color: var(--c-bg);
+    border-bottom: 1px solid var(--c-line);
+    /* 导航是**标识语言的一部分**，全容器走 Zpix。 */
+    font-family: var(--font-pixel);
   }
 
   .nav-inner {
@@ -98,18 +119,24 @@ const isBlog =
   }
 
   .logo {
-    color: var(--gb-3);
-    font-size: 0.85rem;
+    color: var(--c-text);
+    font-size: 0.875rem;
+    line-height: 20px;
     letter-spacing: 0.05em;
     white-space: nowrap;
   }
 
   .logo .dot {
-    color: var(--gb-2);
+    color: var(--c-accent);
   }
 
   .logo:hover {
-    color: var(--gb-2);
+    /* 强调色不做文字；hover 通电感靠 2px 强调色下划线 */
+    color: var(--c-text);
+    text-decoration: underline;
+    text-decoration-color: var(--c-accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
   }
 
   ul {
@@ -130,11 +157,13 @@ const isBlog =
     position: relative;
     display: inline-block;
     padding: 0.4rem 0.5rem;
-    color: var(--gb-3);
-    font-size: 0.9rem;
+    color: var(--c-text);
+    font-size: 0.875rem;
+    letter-spacing: var(--ls-14);
+    line-height: 20px;
     white-space: nowrap;
     /* 总线（Bus）下划线：8px 档位虚线，hover 通电 */
-    border-bottom: 2px dashed color-mix(in srgb, var(--gb-2) 32%, transparent);
+    border-bottom: 2px dashed color-mix(in srgb, var(--c-accent) 32%, transparent);
     transition: border-color 0.1s steps(2);
   }
 
@@ -145,26 +174,36 @@ const isBlog =
     bottom: 0;
     left: 0.5rem;
     height: 3px;
-    background-color: var(--gb-2);
+    background-color: var(--c-accent);
     transform: scaleX(0);
     transform-origin: left;
     transition: transform 0.12s steps(6);
   }
 
   a:hover {
-    color: var(--gb-2);
-    text-shadow: 2px 2px 0 var(--gb-1);
-    border-bottom-color: var(--gb-2);
+    /* 文字仍用结构色（accent 作文字在 dawnbringer-ember 4.02 破 AA） */
+    color: var(--c-text);
+    text-shadow: 2px 2px 0 var(--c-line);
+    border-bottom-color: var(--c-accent);
   }
 
-  /* scrollspy 当前 section */
+  /* scrollspy 当前 section：靠 3px 实心 accent 下划线（面积变化）区分，
+     不靠文字变色——accent 作文字在 dawnbringer-ember 只有 4.02:1。 */
   a.is-active {
-    color: var(--gb-2);
+    color: var(--c-text);
     border-bottom-color: transparent;
   }
 
   a.is-active::after {
     transform: scaleX(1);
+  }
+
+  /* 窄屏收噪（2026-10-30 W5·S7）：390px 下 7 条 2px 虚线排成一排读作「一排虚线」，
+     当前项反而被淹没。窄屏只保留当前项的 3px 实心 accent 下划线。 */
+  @media (max-width: 560px) {
+    a {
+      border-bottom-color: transparent;
+    }
   }
 
   .nav-cat {

@@ -1,31 +1,31 @@
 ---
 /**
- * BgFx —— 全站页面背景 canvas 像素动画（v5：机器叙事默认底，08-31 全套件立项）。
+ * BgFx —— 全站页面背景 canvas（v6：「窗外」世界，ADR-0020）。
  * 挂载于 BaseLayout：固定视口装饰层，body 背景之上、页面内容之下，全路由统一。
  *
- * 可读性契约（readability seam）：canvas 与内容之间加 scrim 玻璃层（--gb-0 半透明），
- * 保证正文/卡片在任何动画模式 + additive 辉光下可读。分区策略：
- * - heroVivid（index 首页专用）：scrim 从 100vh 起（hero 首屏全亮免遮，向下自动进入保护）
+ * 双模式：world（默认）/ off（SideDock 循环；v4 五滤镜与 v5 机箱 core 均已退役）。
+ * - world「窗外」：首屏是一扇望向珠江的窗——像素色带天空（拜耳抖动过渡）按
+ *   真实日出日落连续漂移（太阳高度角驱动一切：调色板/天体/星光/窗灯），
+ *   广州塔小蛮腰 + 东西双塔剪影 + 江面波光；Open-Meteo 天气驱动雨雪雾雷。
+ *   世界只住首屏（#window 那一屏，ADR-0027）：随滚动淡出，离开首屏回到主题底色的
+ *   「房间」；工位（#hero 那一章）另有一扇 alpha 门 deskAlpha；天气粒子
+ *   全站飘落（scrim 区亮度补偿）。首访点亮仪式：从深夜快进到此刻。
+ * 2026-09-25：core（v5 机箱机器叙事）**退役**——背景只留 world / off；机器绘制、
+ * 布局引擎、相机与信号包代码连同其单测一并删除（作者裁决：「core 退役换成 world 背景」）。
+ *
+ * 可读性契约（readability seam）：canvas 与内容之间加 scrim 玻璃层（--c-bg 半透明）：
+ * - heroVivid（index 首页专用）：scrim 从 100vh 起（hero 首屏全亮免遮——世界是内容画）
  * - 默认（content 模式）：scrim 整页覆盖（blog / 文章 / 404 等阅读页）
  *
- * 七模式：core（机箱内部·机器叙事默认，v5 新）+ 既有六模式（人工覆盖滤镜）
- * - core：常驻 PCB 结构层（走线簇 + 芯片块，停帧即一张设计图）+ 低频事件层
- *   （信号包沿走线流动 6-12s 一只 / 尘埃 15-25s 一颗 / 待机灯 1.6s 呼吸）
- *   + 会话一次的开机仪式（走线级联上电 + LED 双闪）+ 事件响应
- *   （click→reticket+信号包回传 / nav→汇聚 / Konami→全亮 / 主题→磷光再调谐）
- * - stars/scan/rain/wave/grid：v4 保留原样，循环按钮人工覆盖
- *
- * 评审门（docs/specs/bgfx-acceptance-matrix.md）：单强调色（唯一活色 --gb-2）/
- * 10s 窗口单焦点（编排时刻>散落特效）/ 静置密度预算（移动对象 ≤4）/ 时长档 /
- * 停帧构图。时刻总线：src/lib/fx-moment.ts。
- *
  * 行为约定：
- * - 循环按钮切换（与 CRT/SFX 同族，固定左下第二顺位），偏好持久化 '8bitme:bgfx'
- * - 颜色读 :root --gb-*；主题切换经 MutationObserver 重读；深色主题用
- *   additive（'lighter'）辉光，浅色主题退回 source-over（防洗白）
- * - 音画联动：监听 '8bit:fx'（click→波纹 / nav→扫光 / hover→星火）；core 下转机器响应
- * - prefers-reduced-motion：不冻结，降频半速（cadence）；core 事件层自然降频
- * - 性能：dpr ≤1.5、粒子数随面积裁剪、标签页隐藏停帧（固定背景恒在视口，无滚动淡出）
+ * - 循环按钮切换，偏好持久化 '8bitme:bgfx'（旧存值 stars/rain 等归一到默认 world）
+ * - 颜色读 :root --c-*（窗框/室内）；world 天空用 sky-palette 固定实景调色板
+ *   （窗外是真实世界，不参与主题切换）
+ * - 天气是主站唯一运行时外部请求（ADR-0020 批准的例外）：失败静默降级为晴，
+ *   天空照常按本地时间走；30min localStorage 缓存（src/lib/weather.ts）
+ * - prefers-reduced-motion：降频不冻结；点亮仪式跳过；雷闪禁用（WCAG 2.3.1）
+ * - 性能：dpr ≤1.5；天空/天际线按关键帧预渲染 offscreen crossfade（每帧 ≤4 次
+ *   全屏 drawImage + 粒子）；标签页隐藏停帧
  */
 
 interface Props {
@@ -37,83 +37,131 @@ const { heroVivid = false } = Astro.props;
 ---
 
 <div class="bgfx-canvas" data-vivid={heroVivid ? '1' : null} aria-hidden="true">
-  <canvas id="bgfx-canvas"></canvas>
+  <canvas id="bgfx-canvas" aria-hidden="true"></canvas>
 </div>
 
-{/* 可读性 scrim：canvas（z -1）之上、内容之下；heroVivid 时 hero 首屏免遮 */}
+{/* 可读性 scrim：canvas（z -3）之上、内容之下；heroVivid 时 hero 首屏免遮 */}
 <div class:list={['bgfx-scrim', { 'hero-vivid': heroVivid }]} aria-hidden="true"></div>
 
-{/* 按钮已迁到 SideDock.astro（侧边折叠仓）。此处只留 canvas + scrim 全屏层。
-    BgFx 通过 bgfxPref('8bitme:bgfx') 与 dock 通信：dock 写入新模式后，
-    下面 frame() 头部轮询发现差异 → 切换 mode + 重画。 */}
+{/* 按钮已迁到 SideDock.astro（侧边折叠仓）。此处只留 canvas + scrim 全屏层。 */}
 
 <script>
   import { bgfxPref } from '../lib/prefs';
   import { hexToRgba, type Palette } from '../lib/palette';
+  import { relativeLuminance } from '../lib/themes';
   import { createFxRuntime, setAdditive, type FxRuntimeHost } from '../lib/fx-runtime';
-  import { bootOnce, createMomentGate, nextInRange, phosphorDecay } from '../lib/fx-moment';
+  import { bootOnce } from '../lib/fx-moment';
   import {
-    coreGlow,
-    dustSpawn,
-    genSectionTargets,
     easeSilk,
+    lightThemeLineFactor,
     mix,
-    cameraFor,
-    chipPins,
-    SECTION_IDS,
-    ledPhase,
-    packetPos,
-    rainColumns,
-    rainLengthRange,
-    scanTailAlpha,
-    scanThickness,
     scrimCoverage,
-    starCount,
-    starViewY,
-    waveAmplitude,
-    type MachineChip,
-    type MachineTrace,
-    type SectionId,
-    type TraceSeg,
   } from '../lib/bgfx-motion';
+  import {
+    bootAlt,
+    daylightFor,
+    fallbackAnchors,
+    moonLitRow,
+    moonPhase,
+    skyMoment,
+    starlightFor,
+    type DayAnchors,
+  } from '../lib/sky-time';
+  import {
+    bandBounds,
+    dimSky,
+    ditherTakeLower,
+    frameBracket,
+    hexToRgb,
+    lerpHex,
+    sampleSky,
+    SKY_FRAMES,
+  } from '../lib/sky-palette';
+  import {
+    getLiveWeather,
+    sunVisibility,
+    precipSkyK,
+    weatherFx,
+    type WeatherKind,
+    type WeatherFx,
+  } from '../lib/weather';
+  import { clockOffsetMs, debugNow, debugWeatherKind } from '../lib/debug';
+  import { noteThunderFlash, thunderStrike, updateAmbient } from '../lib/ambience';
+  import { siteWeather } from '../lib/config';
+  import {
+    BIRD,
+    birdWingUp,
+    boatPose,
+    BOAT,
+    cloudBob,
+    cloudGust,
+    genBolt,
+    genClouds,
+    glassStreamCount,
+    glassStreakCount,
+    morphCloud,
+    genScenery,
+    mulberry32,
+    mistTopY,
+    MIST,
+    nextThunderStrike,
+    rainDropCount,
+    rainLook,
+    rainSpeed,
+    ridgeAt,
+    reflectAlpha,
+    reflectGap,
+    reflectShear,
+    REFLECT,
+    rippleCap,
+    RIPPLE_LIFE,
+    sillWaterHeight,
+    snowDrift,
+    snowFlakeCount,
+    windowShake,
+    type BoltPoint,
+    type PixelCloud,
+    type ScenerySpec,
+  } from '../lib/sky-scene';
+  // 真窗几何（墙上凹洞）：世界坐标以洞左上角为原点，见 ADR 前的 T1 模块。
+  import { windowSpec, type WindowSpec } from '../lib/window-room';
+  // 窗边工位静物几何（T8）：桌 / CRT 壳 / 台灯 / 茶 / 书 / 卡带锚点
+  import { deskSpec } from '../lib/desk-room';
+  // 窗光学：墙面/框剖面（T4 窗体结构）+ 光交换与玻璃物性（T5：月光带/反光/结露/冷罩/起雾）
+  import {
+    wallFace,
+    wallLit,
+    frameProfile,
+    glassTint,
+    frost,
+    mistGlass,
+    indoorReflection,
+    reflectionLayers,
+    moonSpill,
+    sunlitFrame,
+    warmEdgeAlpha,
+    glassWarm,
+  } from '../lib/window-light';
 
-  const MODES = [
-    'off',
-    'core',
-    'stars',
-    'scan',
-    'rain',
-    'wave',
-    'grid',
-  ] as const;
+  const MODES = ['off', 'world'] as const;
   type Mode = (typeof MODES)[number];
-  const LABELS: Record<Mode, string> = {
-    off: 'OFF',
-    core: 'CORE',
-    stars: 'STARS',
-    scan: 'SCAN',
-    rain: 'RAIN',
-    wave: 'WAVE',
-    grid: 'GRID',
-  };
-  const TITLES: Record<Mode, string> = {
-    off: '关闭背景特效',
-    core: '机箱核心（机器叙事默认）',
-    stars: '星尘浮游',
-    scan: '扫描波纹',
-    rain: '像素雨',
-    wave: '合成波形',
-    grid: '透视网格',
-  };
-  const DEFAULT_MODE: Mode = 'off'; // v6 电路化：背景退场，氛围交给 UI 线条本身（core 留手动）
+  // 作者 09-21 定稿（ADR-0020）→ 09-25 收敛：默认与**唯一**背景 = world「窗外」。
+  // core 退役：旧存值 'core'（以及 v4 五滤镜）一律归一到 world，不让老访客停在老模式上。
+  const DEFAULT_MODE: Mode = 'world';
 
   const wrap = document.querySelector<HTMLElement>('.bgfx-canvas')!;
   const scrim = document.querySelector<HTMLElement>('.bgfx-scrim');
   const canvas = document.getElementById('bgfx-canvas') as HTMLCanvasElement;
   const ctx = canvas.getContext('2d')!;
 
+  /** 旧存档归一：v4 五滤镜 / core（已退役）/ 未知值一律回默认（world）；off 保留 */
+  function normalize(v: string | null): Mode {
+    if (v === 'off' || v === 'world') return v;
+    return DEFAULT_MODE;
+  }
+
   let mode: Mode = normalize(bgfxPref.get());
-  // 验收展示档：?show 强制 core + 重播开机仪式 + 事件加速（无视旧偏好；生产无参不达此分支）
+  // 验收展示档：?show 强制 world + 重播点亮仪式（无视旧偏好；生产无参不达此分支）
   const SHOW_MODE = new URLSearchParams(location.search).has('show');
   if (SHOW_MODE) {
     try {
@@ -121,25 +169,2409 @@ const { heroVivid = false } = Astro.props;
     } catch {
       /* ignore */
     }
-    mode = 'core';
+    mode = 'world';
   }
   let t = 0;
   let frame = 0;
   let w = 0;
   let h = 0;
+  /** 本帧真窗几何（墙上凹洞）；resize / drawWorld 时重建，世界绘制全按 win 坐标 */
+  let win: WindowSpec = windowSpec(1, 1);
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   let cadence = reduced.matches ? 2 : 1;
 
-  // ---- 配色（fx runtime 提供 palette + additive 门控；[data-theme] 跟随在运行时） ----
+  /** 内容列盒（内容-背景配准的历史遗留量；world 不消费） */
+
+  // ==================== world「窗外」状态 ====================
+  let anchors: DayAnchors = fallbackAnchors(debugNow());
+  let fx: WeatherFx = weatherFx('clear');
+  /** 实况天气种类（未到达 = null）。调试覆写的判定基准，与访客看到的画面解耦 */
+  let liveKind: WeatherKind | null = null;
+  /** 当前展示的太阳高度（点亮仪式插值后的值，一切画面参数的主驱动量） */
+  let alt = 0;
+  let daylight = 1;
+  let starlight = 0;
+  let bootP = 1; // 点亮仪式进度（1 = 完成）
+  let worldAlpha = 0; // 窗那一屏（#window）的可见度（0..1），窗与景只住首屏
+  let deskAlpha = 0; // 工位那一章（#hero）的可见度（0..1），桌/灯/暖光住下一屏
+  let heroShiftY = 0; // #hero 顶的视口偏移（取整）：工位布景跟章平移量（DOM 层 --scene-y 同源同值）
+  /** scrim 顶边的上一次写入值（只在变化时写 style，避免每帧触发布局） */
+  let scrimTopPx = -1;
+  interface WStar { x: number; y: number; size: number; ph: number; spd: number }
+  interface Streak { x: number; y: number; vx: number; vy: number; life: number }
+  interface RainDrop { x: number; y: number; vy: number; vx: number; len: number; depth: 0 | 1 }
+  interface Splash { x: number; y: number; age: number }
+  interface Flake { x: number; y: number; vy: number; ph: number; depth: 0 | 1; size: number }
+  interface Sparkle { ox: number; y: number; ph: number; spd: number }
+  interface Ripple { x: number; y: number; age: number }
+  /** 玻璃上的雨：rx = 相对窗宽 0..1；y = 相对窗高 0..1（与视口尺寸解耦，resize 不炸） */
+  interface GlassDrop { rx: number; y: number; vy: number }
+  /** 飞鸟小队：队列锚点 x（向右飞），y 固定高度；n 只呈人字 */
+  interface Flock { x: number; y: number; n: number }
+  let wStars: WStar[] = [];
+  let streak: Streak | null = null;
+  let rainDrops: RainDrop[] = [];
+  let splashes: Splash[] = [];
+  let flakes: Flake[] = [];
+  let sparkles: Sparkle[] = [];
+  let clouds: PixelCloud[] = [];
+  let scenery: ScenerySpec | null = null;
+  let ripples: Ripple[] = [];
+  let glassStreaks: GlassDrop[] = []; // 玻璃滑痕（细）
+  let glassStreams: GlassDrop[] = []; // 暴雨沿窗流（粗）
+  // T5 玻璃物性/光交换的帧读数（绘制与 dbg 共用同一份，避免两处各算一遍漂移）
+  let glassTintFx: { color: string; alpha: number } = { color: '#000000', alpha: 0 };
+  let frostFx: { edge: boolean; cornerBoost: boolean } | null = null;
+  let mistAlphaFx = 0;
+  let reflectionFx: { x: number; y: number; w: number; h: number; alpha: number } | null = null;
+  let moonSpillFx: { x0: number; x1: number; alphaTop: number; alphaLow: number } | null = null;
+  // T9 暖光系统帧读数（绘制与 dbg 共用同一份）
+  let lampPoolFx: { x0: number; x1: number; y0: number; y1: number; alpha: number } | null = null;
+  let crtGlowFx: { x0: number; y0: number; x1: number; y1: number; alpha: number } | null = null;
+  let steamFx: { cols: number; base: number; top: number; frozen: boolean } | null = null;
+  /** 墙顶灯带起点（nav 底边，视口 px；drawWall 每帧实测写入） */
+  let wallLitTopFx = 0;
+  let flock: Flock | null = null;
+  let nextFlockAt = BIRD.FIRST_AT;
+  /** 天空帧缓存（半分辨率 offscreen，按关键帧索引；dim/resize 时清空） */
+  const skyCache = new Map<number, HTMLCanvasElement>();
+  /** 山与湖面帧缓存（全分辨率 offscreen，色调随关键帧变） */
+  const landCache = new Map<number, HTMLCanvasElement>();
+  let lightningAt = Infinity;
+  /** 簇内连击计数：nextThunderStrike 据此决定下一击是否延续簇 */
+  let thStreak = 0;
+  /** 本击闪的强度系数（近雷 1 / 远雷 0.55，与雷声同签） */
+  let flashPeak = 1;
+  let flashT = 0;
+  /** 本次雷的闪电折线（整数像素顶点；只在雷闪期间存在） */
+  let boltPts: BoltPoint[] | null = null;
+  let streakAt = 0;
+  /** 山湖帧左右视差余量（px）：帧比洞宽，防止 sdx 平移时洞缘露底 */
+  const LAND_MARGIN = 8;
+  /** 窗台板缝间距（px）：把台面拆成「可数的板」；同时负责打断 accent 受光线（L3 ≤屏宽 30%） */
+  /** 天空帧渲染：6 色带为锚点 + 全高度连续拜耳抖动渐变（1:1 全分辨率）。
+      旧版是「平色带 + 带间 24px 过渡区」——色带内部是死平的大色块，
+      现在每个带中心行仍保持纯带色，但带与带之间整段用 1px 拜耳棋盘渐变，
+      天空读作细腻的像素渐变而不是贴色纸。 */
+  function renderSkyFrame(i: number): HTMLCanvasElement {
+    const sw = Math.max(2, win.w);
+    const sh = Math.max(2, win.h);
+    const cv = document.createElement('canvas');
+    cv.width = sw;
+    cv.height = sh;
+    const c = cv.getContext('2d')!;
+    const sky = dimSky(sampleSky(SKY_FRAMES[i]!.alt), fx.dim);
+    const hy = Math.max(4, Math.round(scenery?.horizonY ?? win.h * 0.68));
+    // 渐变锚点：6 个色带中心（锚点行 = 纯带色）+ 顶行（纯 bands[0]）+ 地平线
+    const centers: number[] = [];
+    for (let b = 0; b < 6; b++) {
+      const { top, bottom } = bandBounds(b, hy);
+      centers.push(Math.round((top + bottom) / 2));
+    }
+    centers[0] = 0;
+    centers.push(hy);
+    const cols = sky.bands.map(hexToRgb);
+    const img = c.createImageData(sw, hy);
+    const d = img.data;
+    for (let row = 0; row < hy; row++) {
+      let k = 0;
+      while (k < 5 && row >= centers[k + 1]!) k++;
+      const tt = (row - centers[k]!) / Math.max(1, centers[k + 1]! - centers[k]!);
+      const hi = cols[k]!;
+      const lo = cols[Math.min(k + 1, 5)]!;
+      for (let col = 0; col < sw; col++) {
+        const rgb = ditherTakeLower(col, row, tt) ? lo : hi;
+        const o = (row * sw + col) * 4;
+        d[o] = rgb[0];
+        d[o + 1] = rgb[1];
+        d[o + 2] = rgb[2];
+        d[o + 3] = 255;
+      }
+    }
+    c.putImageData(img, 0, 0);
+    return cv;
+  }
+
+  /** 山形填充（脊线 → 水线围成的区域） */
+  function fillRidge(c: CanvasRenderingContext2D, pts: [number, number][], baseY: number) {
+    if (pts.length === 0) return;
+    c.beginPath();
+    c.moveTo(pts[0]![0], baseY);
+    for (const [x, y] of pts) c.lineTo(x, y);
+    c.lineTo(pts[pts.length - 1]![0], baseY);
+    c.closePath();
+    c.fill();
+  }
+
+  /**
+   * 山与湖面帧渲染（**洞尺寸**；色调随天空帧——黄昏整片湖是金红的，深夜是墨蓝）。
+   * 左右各留 LAND_MARGIN 视差余量：帧比洞宽，`sdx` 平移时洞缘不露底。
+   * 帧内洞坐标原点 = (LAND_MARGIN, 0)，绘制时整帧放在 translate 后的 x = -LAND_MARGIN + sdx。
+   * 湖面 = 天空的镜像采样 + 逐行暗化 + 静态波纹剪切；山影再以镜像半透明叠回去。
+   */
+  function renderLandFrame(i: number, snowAmt: number): HTMLCanvasElement {
+    const fw = win.w + LAND_MARGIN * 2; // 帧宽 = 洞宽 + 两侧余量
+    const ox = LAND_MARGIN; // 洞 x=0 在帧内的偏移
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(2, fw);
+    cv.height = Math.max(2, win.h);
+    const c = cv.getContext('2d')!;
+    const sky = dimSky(sampleSky(SKY_FRAMES[i]!.alt), fx.dim);
+    const s = scenery!;
+    const hy = s.horizonY;
+    const waterH = Math.max(1, win.h - hy);
+    // 脊线向两侧补齐到帧缘：余量内也是山体，不是透明/水色露底
+    const ext = (pts: [number, number][]): [number, number][] => [
+      [-ox, ridgeAt(pts, 0)],
+      ...pts,
+      [win.w + ox, ridgeAt(pts, win.w)],
+    ];
+    const farPts = ext(s.farRidge);
+    const nearPts = ext(s.nearRidge);
+    c.save();
+    c.translate(ox, 0); // 洞坐标绘制：洞 x=0 → 帧 x=ox；全幅填充用 -ox / fw
+    // 1) 湖面：逐行镜像天空色（越近越暗）+ 静态波纹剪切
+    for (let y = hy; y < win.h; y++) {
+      const d = (y - hy) / waterH;
+      const mir = Math.max(0, hy - (y - hy) * 0.5);
+      // 镜像采样改为**连续插值**（2026-10-30 S8）：旧写法 bandIdx 取整，整片水
+      // 只剩 3–4 个色阶，每阶涂 40–50 行 → 远看是 4 块硬边色板（截图实锤：
+      // 深蓝 / 灰 / 暖灰 / 卡其，接缝清晰）。逐行 1px 连续过渡后，色阶差小于
+      // 一个色阶，肉眼只读到「渐变」。
+      const bf = Math.min(5, (mir / Math.max(1, hy)) * 6);
+      const bi0 = Math.floor(bf);
+      const bi1 = Math.min(5, bi0 + 1);
+      const mirrorCol = lerpHex(sky.bands[bi0]!, sky.bands[bi1]!, bf - bi0);
+      // 暗化混向实景水色而不是纯黑：混黑会把湖面压成「水泥灰」，
+      // 混水色才读得出「水」（黄昏自动金红、白天深蓝）
+      c.fillStyle = lerpHex(mirrorCol, sky.water, 0.42 + d * 0.5);
+      const shear = Math.round(Math.sin(y * 0.33) * (1 + d * 3));
+      c.fillRect(-ox + shear, y, fw + 8, 1);
+    }
+    // 1b) 水平反光条纹（像素水面的标志：越靠地平线越密、越亮）
+    // C3：0.16 → 0.12——水平条纹别与月亮反光列抢注意力
+    c.globalAlpha = 0.16;
+    for (let y = hy + 3; y < win.h; y += 7) {
+      const d = (y - hy) / waterH;
+      if ((y - hy) % 14 >= 7) continue;
+      c.fillStyle = sky.bands[5]!;
+      c.fillRect(-ox, y, fw, d < 0.4 ? 2 : 1);
+    }
+    c.globalAlpha = 1;
+    // 1c) 贴岸亮带：地平线处的水是「最远处的镜面」，反射最多天光——最亮最天色
+    for (let k = 0; k < 8; k++) {
+      c.globalAlpha = 0.16 * (1 - k / 8);
+      c.fillStyle = sky.bands[5]!;
+      c.fillRect(-ox, hy + k, fw, 1);
+    }
+    c.globalAlpha = 1;
+    // 2) 山影倒影：不在缓存帧里画（静态镜像纹丝不动，一眼假）——
+    //    改由 drawReflection() 在 drawWorld 里逐行动态采样 + 随波扭曲
+    // 3) 山体 + 脊线受光边（天光勾出山形——像素风景的关键细节）
+    const ridgeWithLight = (pts: [number, number][], bodyCol: string) => {
+      c.fillStyle = bodyCol;
+      fillRidge(c, pts, hy);
+      c.fillStyle = lerpHex(bodyCol, sky.bands[5]!, 0.34);
+      for (let k = 1; k < pts.length; k++) {
+        const [x0] = pts[k - 1]!;
+        const [x1, y1] = pts[k]!;
+        c.fillRect(x0, Math.round(y1), Math.max(1, x1 - x0), 1);
+      }
+    };
+    ridgeWithLight(farPts, sky.ridgeFar);
+    // 3a') 远山脚大气透视：远山底部逐行溶进天色（坡向地平线加浓）——
+    //      远山不再是一块纯色贴到水边；只洗底部 ~16px，山脊线附近保持纯色
+    //      （e2e countColor 的窗口是 hy-4 以上，山体上部仍有大片纯色）
+    const hazeH = Math.min(16, Math.round(win.h * 0.02));
+    for (let k = 0; k < hazeH; k++) {
+      c.globalAlpha = 0.02 + 0.18 * Math.pow(k / hazeH, 1.4);
+      c.fillStyle = sky.bands[5]!;
+      c.fillRect(-ox, hy - hazeH + k, fw, 1);
+    }
+    c.globalAlpha = 1;
+    ridgeWithLight(nearPts, sky.ridgeNear);
+    // 3a'') 近山树冠层（2026-10-30 白天美术）：沿脊线铺一排 2–5px 的团冠，
+    //       让山脊变成「有树的岭」而不是一条平滑曲线。只加在近山——远山是
+    //       大气透视的淡层，加树冠会把「远」破坏掉。确定性散布（同种子同形）。
+    {
+      const crownLit = lerpHex(sky.ridgeNear, sky.bands[5]!, 0.34);
+      const rc = mulberry32(9137 + i * 71);
+      for (let x = 0; x < win.w; ) {
+        const ry = Math.round(ridgeAt(s.nearRidge, x));
+        const cw = 2 + Math.floor(rc() * 4);
+        const ch = 2 + Math.floor(rc() * 3);
+        c.fillStyle = sky.ridgeNear;
+        c.fillRect(x, ry - ch, cw, ch);
+        c.fillStyle = crownLit; // 冠顶 1px 受光（与脊线受光边同源）
+        c.fillRect(x, ry - ch, cw, 1);
+        x += cw + 1 + Math.floor(rc() * 3);
+      }
+    }
+    // 3b') 近山暗棱双线：受光边下方 2px 再勾一条压暗棱线（双线勾边 = 像素山的体积）
+    c.fillStyle = lerpHex(sky.ridgeNear, '#000000', 0.3);
+    for (let k = 1; k < nearPts.length; k++) {
+      const [x0] = nearPts[k - 1]!;
+      const [x1, y1] = nearPts[k]!;
+      c.globalAlpha = 0.5;
+      c.fillRect(x0, Math.round(y1) + 2, Math.max(1, x1 - x0), 1);
+    }
+    c.globalAlpha = 1;
+    // 3b) 积雪（下雪时最强的视觉信号：山脊铺一层白，底边用正弦做出积雪厚度不均）
+    if (snowAmt > 0.01) {
+      const cap = (pts: [number, number][], depth: number) => {
+        c.fillStyle = lerpHex(sky.bands[5]!, '#ffffff', 0.55 + depth * 0.2);
+        for (let k = 0; k < pts.length; k++) {
+          const [x, y] = pts[k]!;
+          const nx = k + 1 < pts.length ? pts[k + 1]![0] : x + 1;
+          const wdt = Math.max(1, nx - x);
+          const thick = Math.round(win.h * 0.012 * snowAmt * (0.6 + depth * 0.5) * (0.55 + 0.45 * Math.sin(x * 0.11 + depth)));
+          if (thick > 0) c.fillRect(x, Math.round(y), wdt, thick);
+        }
+      };
+      cap(farPts, 0.35);
+      cap(nearPts, 1);
+      // 岸线积雪（水边的一条白）
+      c.fillStyle = lerpHex(sky.bands[5]!, '#ffffff', 0.6);
+      c.fillRect(-ox, hy - 1, fw, Math.max(1, Math.round(win.h * 0.006 * snowAmt)));
+    }
+    // 4) 山脚薄雾：单条 0.12 硬带 → 逐行坡（贴地平线最浓，向上淡出）——
+    //    山与湖的过渡不再是一条等宽带子。雾坡几何来自 sky-scene 的 MIST 常量
+    //    （e2e 的 countColor 窗口同源派生，两边不许各算各的）
+    const mistH = Math.max(MIST.MIN, Math.round(win.h * MIST.H));
+    const mistTop = Math.round(mistTopY(win.h, hy));
+    for (let k = 0; k < mistH; k++) {
+      c.globalAlpha = 0.04 + 0.12 * Math.pow(k / mistH, 1.3); // 贴地平线最浓（向上淡出）
+      c.fillStyle = sky.bands[5]!;
+      c.fillRect(-ox, mistTop + k, fw, 1);
+    }
+    c.globalAlpha = 0.08;
+    c.fillRect(-ox, hy, fw, 3); // 水线以下几行余雾
+    c.globalAlpha = 1;
+    // 4b) 山体皴纹：近山脊线下稀疏竖纹（明暗两色），破掉「纯色块剪影」
+    for (const st of s.hatch) {
+      c.fillStyle = st.shade
+        ? lerpHex(sky.ridgeNear, sky.bands[5]!, 0.42)
+        : lerpHex(sky.ridgeNear, '#000000', 0.3);
+      c.globalAlpha = st.shade ? 0.5 : 0.55;
+      c.fillRect(st.x, st.y, 1, st.len);
+    }
+    c.globalAlpha = 1;
+    // 4c') 近山岩面碎点：确定性 1px 两色碎纹（暗点受影/亮点受光），
+    //      配合皴纹破掉大面积纯色；只在近山体、且在雾坡以上
+    const spk = mulberry32(4100 + i * 137);
+    const spkN = Math.round(win.w * 0.028);
+    for (let k = 0; k < spkN; k++) {
+      const x = Math.floor(spk() * win.w);
+      const ry = ridgeAt(s.nearRidge, x);
+      const y = ry + 2 + Math.floor(spk() * Math.max(1, hy - ry - hazeH - 4));
+      if (y >= hy - hazeH) continue;
+      c.globalAlpha = 0.4;
+      c.fillStyle = spk() < 0.6 ? '#000000' : sky.bands[5]!;
+      c.fillRect(x, y, 1 + (spk() < 0.3 ? 1 : 0), 1);
+    }
+    c.globalAlpha = 1;
+    // 4c) 岸树：地平线上的团冠树剪影（岸线不再是一条直线）
+    // 岸树 = 近山色再压暗一档；岛树同色但站在滩涂上
+    const treeCol = lerpHex(sky.ridgeNear, '#000000', 0.32);
+    for (const tr of s.trees) {
+      if (tr.isle) continue; // 岛树连岛一起画（下面）
+      drawTree(c, tr, treeCol);
+    }
+    // 4d) 小岛：滩涂（近山色压暗）+ 载树 + 水面窄倒影
+    c.fillStyle = lerpHex(sky.ridgeNear, '#000000', 0.18);
+    c.fillRect(s.isle.x - Math.floor(s.isle.w / 2), hy - s.isle.h, s.isle.w, s.isle.h + 1);
+    for (const tr of s.trees) if (tr.isle) drawTree(c, tr, treeCol);
+    // （岛的反光也交给动态倒影：岸线带的镜像行里自然含岛与树）
+    // 5) 水岸线（山脚与湖面的分界）
+    c.fillStyle = lerpHex(sky.ridgeNear, '#000000', 0.35);
+    c.fillRect(-ox, hy - 1, fw, 2);
+    c.restore();
+    return cv;
+  }
+
+  /** 团冠树剪影：树干 1–2px + 树冠块堆（画在 land 缓存帧里） */
+  function drawTree(
+    c: CanvasRenderingContext2D,
+    tr: ScenerySpec['trees'][number],
+    col: string
+  ) {
+    c.fillStyle = col;
+    c.fillRect(tr.x, tr.baseY - tr.trunk, 2, tr.trunk);
+    for (const [dx, dy, bw, bh] of tr.blocks) c.fillRect(tr.x + dx, tr.baseY + dy, bw, bh);
+  }
+
+  /**
+   * 山影倒影：从 land 缓存帧里逐行镜像取样（2px 行），每行做正弦水平错位
+   * （随波扭曲，越靠观察者错位越大）+ 透明度纵深衰减 + 低频呼吸 + 破镜行
+   * （波浪打断镜像的暗带）。静态镜像是一张「倒挂在水面上的照片」，这样才是水。
+   *
+   * 跨帧成本：~77 行 × ≤2 次 drawImage（crossfade 时），比静态镜像多出的只是
+   * 逐行偏移——山形仍来自缓存帧，无重新渲染。
+   */
+  function drawReflection(i: number, ft: number, sdx: number, holeBottom: number) {
+    const s = scenery!;
+    const hy = s.horizonY;
+    // 镜像带高度：从地平线到最高峰的镜像距离（再钳到窗洞内，不越过窗台）
+    const top = Math.min(...s.farRidge.map((p) => p[1]), ...s.nearRidge.map((p) => p[1]));
+    const span = Math.min(2 * (hy - top), holeBottom - hy - 4);
+    if (span <= 0) return;
+    const f0 = landFrameAt(i, fx.snow);
+    const f1 = landFrameAt(i + 1, fx.snow);
+    const fw = win.w + LAND_MARGIN * 2;
+    const wk = reduced.matches ? 0.35 : 1; // reduce：波也慢半拍（降频不冻结）
+    for (let y = hy; y < hy + span; y += REFLECT.STEP) {
+      const depth = (y - hy) / span; // 0 = 贴岸，1 = 近观者
+      const srcY = 2 * hy - y - REFLECT.STEP; // 镜像行（山体带内）
+      if (srcY < 0) continue;
+      // 倒影与山湖帧同源：同样带 LAND_MARGIN 余量，dest x 对齐帧的 -LAND_MARGIN
+      const shear = reflectShear(y, t * wk, 0, depth) + sdx - LAND_MARGIN;
+      let a = reflectAlpha(depth, t * wk, 0);
+      if (reflectGap(y, t * wk, 0)) a *= 0.25; // 破镜行：这行几乎露水色
+      if (ft > 0.001) {
+        ctx.globalAlpha = worldAlpha * a * (1 - ft);
+        ctx.drawImage(f0, 0, srcY, fw, 1, shear, y, fw, REFLECT.STEP);
+        ctx.globalAlpha = worldAlpha * a * ft;
+        ctx.drawImage(f1, 0, srcY, fw, 1, shear, y, fw, REFLECT.STEP);
+      } else {
+        ctx.globalAlpha = worldAlpha * a;
+        ctx.drawImage(f0, 0, srcY, fw, 1, shear, y, fw, REFLECT.STEP);
+      }
+    }
+  }
+
+  function skyFrameAt(i: number): HTMLCanvasElement {
+    let cv = skyCache.get(i);
+    if (!cv) {
+      cv = renderSkyFrame(i);
+      skyCache.set(i, cv);
+    }
+    return cv;
+  }
+  function landFrameAt(i: number, snowAmt: number): HTMLCanvasElement {
+    // 缓存键含雪量档位：积雪是场景的一部分，雪停了得重新渲染
+    const key = i * 8 + Math.round(snowAmt * 4);
+    let cv = landCache.get(key);
+    if (!cv) {
+      cv = renderLandFrame(i, snowAmt);
+      landCache.set(key, cv);
+    }
+    return cv;
+  }
+
+  /** 降水粒子播种（天气到达 / resize / 模式切回时） */
+  function seedPrecip(): void {
+    rainDrops = [];
+    flakes = [];
+    splashes = [];
+    glassStreaks = [];
+    glassStreams = [];
+    const look = rainLook(fx.rain);
+    const nR = rainDropCount(w, fx.rain);
+    for (let i = 0; i < nR; i++) {
+      const depth = (Math.random() < 0.55 ? 0 : 1) as 0 | 1;
+      const [lo, hi] = rainSpeed(depth);
+      // 雨越大越长/越快/越斜（毛毛雨与暴雨不再是同一场雨换了个密度）
+      const vy = (lo + Math.random() * (hi - lo)) * look.vyMul;
+      rainDrops.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vy,
+        vx: vy * look.slantK, // 风斜（由雨强决定，不再写死 0.16）
+        len: ((depth ? 14 : 8) + Math.random() * 8) * look.lenMul,
+        depth,
+      });
+    }
+    // 玻璃上的雨：滑痕（细）+ 暴雨水股（粗）。位置存**相对窗洞比例**，
+    // 绘制时再映射到 windowSpec 给的窗洞矩形（resize 不会飞出去）
+    if (fx.rain >= 0.15) {
+      const nSt = glassStreakCount(w, fx.rain);
+      for (let i = 0; i < nSt; i++) {
+        glassStreaks.push({ rx: Math.random(), y: Math.random(), vy: 0.25 + Math.random() * 0.3 });
+      }
+      const nSm = glassStreamCount(fx.rain);
+      for (let i = 0; i < nSm; i++) {
+        glassStreams.push({ rx: Math.random(), y: Math.random() * 0.3, vy: 0.7 + Math.random() * 0.4 });
+      }
+    }
+    const nS = snowFlakeCount(w, fx.snow);
+    for (let i = 0; i < nS; i++) {
+      const depth = (Math.random() < 0.5 ? 0 : 1) as 0 | 1;
+      const d = snowDrift(depth);
+      flakes.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vy: d.vy[0] + Math.random() * (d.vy[1] - d.vy[0]),
+        ph: Math.random() * Math.PI * 2,
+        depth,
+        size: depth ? 2 + (Math.random() < 0.25 ? 1 : 0) : 1,
+      });
+    }
+    // （re）播种时同样给雷暴一个近的首闪（~1.5s）：resize / 重进世界不该让人干等。
+    // 雷闪**不受 reduced-motion 抑制**：单闪 0.3s、簇式随机节奏（连击 1.8–5s /
+    // 常规 3.5–16.5s），仍远低于 WCAG 2.3.1
+    // 的「每秒 ≤3 闪」红线，是天气现象不是 UI 动效（2026-09-22 裁决，作者实抓 reduced
+    // 环境下「完全看不到闪电听不到雷」）。
+    if (fx.thunder) {
+      lightningAt = frame + Math.round(90 * (0.75 + Math.random() * 0.5));
+      thStreak = 0; // 重进世界/换天气：簇计数清零
+    }
+  }
+
+  function seedWorld(): void {
+    const rng = mulberry32(Math.round(win.w * 7 + win.h * 13));
+    wStars = Array.from({ length: 220 }, () => ({
+      x: Math.random() * win.w,
+      y: Math.random() * win.h * 0.55, // 星星只挂地平线以上
+      size: Math.random() < 0.18 ? 2 : 1,
+      ph: Math.random() * Math.PI * 2,
+      spd: 0.03 + Math.random() * 0.05,
+    }));
+    streak = null;
+    clouds = genClouds(win.w, win.h, fx.cloud);
+    scenery = genScenery(win.w, win.h);
+    ripples = [];
+    // 湖面波光荣装点（ox = 相对天体光柱中心的偏移）
+    sparkles = Array.from({ length: 120 }, () => ({
+      ox: (rng() - 0.5) * 100,
+      y: 0,
+      ph: rng() * Math.PI * 2,
+      spd: 0.04 + rng() * 0.08,
+    }));
+    for (const sp of sparkles)
+      sp.y = scenery.horizonY + 4 + rng() * Math.max(4, win.h - scenery.horizonY - 8);
+    skyCache.clear();
+    landCache.clear();
+    seedPrecip();
+  }
+
+  /**
+   * 天气落档（实况到达 / 调试覆写变更共用一条路径——两条路各写一份是漂移之源）：
+   * 换天气 = 换云层 + 换雨雪播种 + 弃掉按天气预渲染的天空/天际线缓存。
+   * 同 kind 早退：避免「每帧都重播种」把粒子搅成噪声。
+   */
+  function applyWx(kind: WeatherKind): void {
+    if (kind === fx.kind) return;
+    fx = weatherFx(kind);
+    skyCache.clear();
+    landCache.clear();
+    clouds = genClouds(win.w, win.h, fx.cloud);
+    seedPrecip();
+    // 雷暴的第一道闪电要**很快就到**：切到雷暴后 ~1.5s 必闪一次（首闪近、
+    // 后续簇式随机节奏，见 nextThunderStrike）。没有这条，作者切过来看几秒只看到雨、看不到雷（实抓）。
+    if (fx.thunder) {
+      lightningAt = frame + Math.round(90 * (0.75 + Math.random() * 0.5));
+      thStreak = 0;
+    }
+  }
+
+  /** 天气到达：记录实况 + 更新晨昏锚点 + 落档（30min 一次，无感切换） */
+  function applyLiveWeather(): void {
+    getLiveWeather(siteWeather).then((live) => {
+      if (!live) return;
+      liveKind = live.kind;
+      anchors = { sunriseMs: live.sunriseMs, sunsetMs: live.sunsetMs };
+      applyWx(debugWeatherKind(liveKind));
+    });
+  }
+
+  let mNX = 0;
+  let mNY = 0;
+  function clamp01(n: number): number {
+    return n < 0 ? 0 : n > 1 ? 1 : n;
+  }
+
+  // ==================== world：步进 ====================
+  let realAlt = 0; // 真实太阳高度（30 帧重算一次；点亮仪式期间它是插值终点）
+  function stepWorld() {
+    // 真实时刻：30 帧重算（分钟级漂移无需逐帧）
+    if (frame % 30 === 0) {
+      const m = skyMoment(debugNow(), anchors);
+      realAlt = m.sunAlt;
+      sunArcX = m.sunX;
+      sunArcY = m.sunY;
+      moonArcX = m.moonX;
+      moonArcY = m.moonY;
+    }
+    // 点亮仪式：96 帧（1.6s）从深夜地板 Silk 快进到真实高度；稳态后向真实值缓动
+    if (bootP < 1) {
+      bootP = Math.min(1, bootP + 1 / 96);
+      alt = bootAlt(realAlt, easeSilk(bootP));
+    } else if (alt !== realAlt) {
+      alt += (realAlt - alt) * 0.12;
+      if (Math.abs(realAlt - alt) < 0.001) alt = realAlt;
+    }
+    daylight = daylightFor(alt);
+    starlight = starlightFor(alt);
+    // 云漂移（卷绕）：速度乘阵风倍率——**不是匀速**（作者 2026-09-21：
+    // 「太快了，像是匀速行驶」）。每朵云相位不同 → 云与云之间加减速不同步
+    for (const c of clouds) {
+      c.x += c.vx * cloudGust(t, c.gustPh);
+      if (c.x > win.w + 240) c.x = -c.w - 240;
+    }
+    // 流星（深夜限定）
+    if (!streak && starlight > 0.6 && frame >= streakAt && Math.random() < 0.008) {
+      const ang = Math.PI + (Math.random() - 0.5) * 0.7;
+      const spd = 3.2 + Math.random() * 2.4;
+      streak = { x: Math.random() * win.w, y: Math.random() * win.h * 0.4, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, life: 26 };
+    }
+    if (streak) {
+      streak.x += streak.vx;
+      streak.y += streak.vy;
+      streak.life -= 1;
+      if (streak.life <= 0) {
+        streak = null;
+        streakAt = frame + 60 * 8;
+      }
+    }
+    // 飞鸟小队（晴日限定：阴雨天鸟不飞；reduced-motion 仍飞，只是慢 —— 降频不冻结）
+    if (!flock && frame >= nextFlockAt && fx.rain === 0 && fx.snow === 0) {
+      flock = {
+        x: -80,
+        y: Math.round(win.h * (0.16 + Math.random() * 0.14)),
+        n: 3 + Math.floor(Math.random() * 3),
+      };
+    }
+    if (flock) {
+      flock.x += BIRD.SPEED * (reduced.matches ? 0.5 : 1);
+      if (flock.x > win.w + 120) {
+        flock = null;
+        nextFlockAt = frame + BIRD.GAP + Math.random() * 60 * 12;
+      }
+    }
+    // 雨：远层落在湖面（生涟漪），近层落在镜头前（溅点）
+    // 雨粒子坐标是**视口全屏**的（墙外也下），而湖面住在窗洞里：
+    // 落湖判定用屏幕坐标地平线（win.y + hy），涟漪再映射回洞坐标绘制。
+    const hy = scenery?.horizonY ?? win.h;
+    const hyScreen = win.y + hy;
+    const rippleMax = rippleCap(fx.rain);
+    for (const d of rainDrops) {
+      d.y += d.vy;
+      d.x += d.vx;
+      const floorY = d.depth === 0 ? hyScreen : h;
+      if (d.y - d.len > floorY) {
+        if (d.depth === 0) {
+          if (ripples.length < rippleMax)
+            ripples.push({
+              x: Math.round(d.x * (win.w / Math.max(1, w))),
+              y: hy + 3 + Math.random() * Math.max(2, win.h - hy - 6),
+              age: 0,
+            });
+        } else if (splashes.length < 46 && Math.random() < 0.22) {
+          splashes.push({ x: d.x, y: h - 2 - Math.random() * 3, age: 0 });
+        }
+        d.y = -d.len - Math.random() * 30;
+        d.x = Math.random() * (w + 60) - 30;
+      }
+    }
+    // 玻璃上的雨（滑痕 + 水股）：沿窗面慢慢往下淌，越出窗底就从顶部重新冒出来
+    for (const g of glassStreaks) {
+      g.y += g.vy * 0.045;
+      if (g.y > 1.05) g.y = -0.05;
+    }
+    for (const g of glassStreams) {
+      g.y += g.vy * 0.045;
+      if (g.y > 1.05) g.y = -0.05;
+    }
+    for (let i = splashes.length - 1; i >= 0; i--) {
+      splashes[i]!.age++;
+      if (splashes[i]!.age > 4) splashes.splice(i, 1);
+    }
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      ripples[i]!.age++;
+      if (ripples[i]!.age > RIPPLE_LIFE) ripples.splice(i, 1);
+    }
+    // 雪
+    for (const f of flakes) {
+      f.y += f.vy;
+      f.x += Math.sin(t * 0.02 + f.ph) * snowDrift(f.depth).amp;
+      if (f.y > h + 3) {
+        f.y = -3;
+        f.x = Math.random() * w;
+      }
+    }
+    // 雷闪：闪白更长（9 帧）且带一道像素闪电折线；闪白归零时折线一起收走。
+    // **闪自签**：这一道闪是近亮还是远弱由抽签定（随机强度，作者「别像循环」）。
+    // 雷声已移除（作者「太吓人了」）；闪电时刻仍给雨声一个阵性涌动锚点（noteThunderFlash）。
+    if (flashT > 0) {
+      flashT--;
+      if (flashT === 0) boltPts = null;
+    } else if (fx.thunder && frame >= lightningAt) {
+      const strike = thunderStrike(Math.random);
+      flashPeak = strike.near ? 1 : 0.55;
+      flashT = 9;
+      boltPts = genBolt(win.w, scenery?.horizonY ?? win.h * 0.68, Math.random).map((p) => ({
+        x: p.x + win.x,
+        y: p.y + win.y,
+      }));
+      noteThunderFlash(); // 雨声跟着这一道闪涌一下（雷暴阵性，见 rainSurgeFactor）
+      const sched = nextThunderStrike(frame, thStreak, Math.random);
+      lightningAt = frame + sched.frames;
+      thStreak = sched.inCluster ? thStreak + 1 : 0;
+    }
+  }
+
+  // ==================== world：绘制 ====================
+  let sunArcX = -1;
+  let sunArcY = 0;
+  let moonArcX = -1;
+  let moonArcY = 0;
+
+  /** 方块圆（像素天体）：3 条矩形拼出的八边形 */
+  /** 像素圆（逐行宽度 = √(r²-dy²)）：真正的圆形，不是十字/方块 */
+  function pixelDisc(cx: number, cy: number, r: number, color: string, alpha = 1) {
+    if (r <= 0) return;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    const R = Math.round(r);
+    const x = Math.round(cx);
+    const y = Math.round(cy);
+    for (let dy = -R; dy <= R; dy++) {
+      const hw = Math.round(Math.sqrt(Math.max(0, R * R - dy * dy)));
+      if (hw <= 0) continue;
+      ctx.fillRect(x - hw, y + dy, hw * 2, 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * 梯形光斑（2026-10-29 台灯发光逻辑重构）：从 (y0, halfW0) 逐行推到 (y1, halfW1)，
+   * 中心 70% 实心、两侧 30% 抖动溶解 —— 像素语言里的「光斑边缘」，
+   * 不是硬边矩形（贴纸），也不是整片点阵（噪点）。
+   */
+  function lightTrapezoid(
+    cx: number,
+    y0: number,
+    y1: number,
+    halfW0: number,
+    halfW1: number,
+    color: string,
+    alpha: number,
+    xMin = -Infinity,
+    xMax = Infinity,
+    fade = 0
+  ) {
+    const h = Math.round(y1 - y0);
+    if (h <= 0 || alpha <= 0) return;
+    ctx.fillStyle = color;
+    for (let i = 0; i < h; i++) {
+      const t = i / Math.max(1, h - 1);
+      ctx.globalAlpha = alpha * (1 - fade * t);
+      const hw = Math.round(halfW0 + (halfW1 - halfW0) * t);
+      const y = Math.round(y0) + i;
+      const solid = Math.round(hw * 0.7);
+      if (solid > 0) {
+        const sx0 = Math.max(xMin, cx - solid);
+        const sx1 = Math.min(xMax, cx + solid);
+        if (sx1 > sx0) ctx.fillRect(sx0, y, sx1 - sx0, 1);
+      }
+      for (let dx = solid; dx < hw; dx++) {
+        const keep = 0.85 * (1 - (dx - solid) / Math.max(1, hw - solid));
+        const lx = cx - dx;
+        const rx = cx + dx;
+        if (lx >= xMin && ditherTakeLower(lx, y, keep)) ctx.fillRect(lx, y, 1, 1);
+        if (rx <= xMax && ditherTakeLower(rx, y, keep)) ctx.fillRect(rx, y, 1, 1);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * 柔和光斑（2026-10-29）：`haloDisc` 的 keep 是**常数**，所以盘内密度均匀、盘外为 0
+   * —— 边界永远是一条硬圆（2x 截图里读作「灯后面挂了个圆」）。
+   * 这里把 keep 做成**径向衰减**（中心 0.55 → 边缘 0），没有可读的边界。
+   */
+  function softGlowDisc(cx: number, cy: number, r: number, color: string, alpha: number) {
+    if (r <= 0) return;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha;
+    const R = Math.round(r);
+    const x0 = Math.round(cx);
+    const y0 = Math.round(cy);
+    for (let dy = -R; dy <= R; dy++) {
+      const hw = Math.round(Math.sqrt(Math.max(0, R * R - dy * dy)));
+      for (let dx = -hw; dx < hw; dx++) {
+        const d = Math.min(1, Math.sqrt(dx * dx + dy * dy) / R);
+        const keep = Math.pow(1 - d, 1.05);
+        if (keep <= 0.02) continue;
+        if (!ditherTakeLower(x0 + dx, y0 + dy, keep)) continue;
+        ctx.fillRect(x0 + dx, y0 + dy, 1, 1);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * 抖动光晕盘：越靠外越稀疏（拜耳 4×4 阈值），叠加后自然衰减。
+   * 实心同心圆叠出来是个**靶心**（每层边界都看得见），抖开才是光晕。
+   * `keep` = 保留比例（1 = 实心）。
+   */
+  function haloDisc(cx: number, cy: number, r: number, color: string, alpha: number, keep: number) {
+    if (r <= 0) return;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha;
+    const R = Math.round(r);
+    const x0 = Math.round(cx);
+    const y0 = Math.round(cy);
+    for (let dy = -R; dy <= R; dy++) {
+      const hw = Math.round(Math.sqrt(Math.max(0, R * R - dy * dy)));
+      if (hw <= 0) continue;
+      if (keep >= 0.99) {
+        ctx.fillRect(x0 - hw, y0 + dy, hw * 2, 1);
+        continue;
+      }
+      for (let dx = -hw; dx < hw; dx++) {
+        if (!ditherTakeLower(x0 + dx, y0 + dy, keep)) continue;
+        ctx.fillRect(x0 + dx, y0 + dy, 1, 1);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** 天体屏幕位置（太阳/月亮共用映射）：水平弧位 → 洞内 x，高度 → 洞内地平线以上 */
+  function bodyPos(arcX: number, arcY: number): { x: number; y: number } {
+    const hy = scenery?.horizonY ?? win.h * 0.68;
+    return {
+      x: Math.round(win.w * 0.12 + arcX * win.w * 0.76),
+      y: Math.round(hy - arcY * (hy - win.h * 0.14)),
+    };
+  }
+
+  /** 前景芦苇：三段折线近似摇摆（底直 → 中斜 → 顶斜）+ 穗 */
+  function drawReeds(sdx: number, sky: { ridgeNear: string }) {
+    const stalkCol = lerpHex(sky.ridgeNear, '#000000', 0.3);
+    const headCol = lerpHex(sky.ridgeNear, '#000000', 0.08);
+    const swayK = reduced.matches ? 0.35 : 1;
+    for (const r of scenery!.reeds) {
+      const sw = r.depth > 0.6 ? 2 : 1; // 近丛更粗
+      for (const st of r.stalks) {
+        const sway = Math.sin(t * 0.02 + st.ph) * 5 * r.depth * swayK;
+        const bx = r.x + st.dx + sdx;
+        const h1 = Math.round(st.h * 0.45);
+        const h2 = Math.round(st.h * 0.35);
+        const h3 = Math.max(1, st.h - h1 - h2);
+        const o2 = Math.round(sway * 0.4);
+        const o3 = Math.round(sway);
+        ctx.fillStyle = stalkCol;
+        ctx.fillRect(bx, r.baseY - h1, sw, h1);
+        ctx.fillRect(bx + o2, r.baseY - h1 - h2, sw, h2);
+        ctx.fillRect(bx + o3, r.baseY - h1 - h2 - h3, sw, h3);
+        // 叶（2026-10-30 白天美术）：杆中下段两片斜叶，破掉「一根竖线」的划痕感。
+        // 1px 阶梯两格，朝外撇，随杆摆动取同一偏移（不然叶子会脱杆）。
+        ctx.fillStyle = stalkCol;
+        const leafY = r.baseY - Math.round(h1 * 0.55);
+        ctx.fillRect(bx + sw, leafY, 1, 1);
+        ctx.fillRect(bx + sw + 1, leafY - 1, 1, 1);
+        ctx.fillRect(bx - 1, leafY - Math.round(h1 * 0.25), 1, 1);
+        ctx.fillRect(bx - 2, leafY - Math.round(h1 * 0.25) - 1, 1, 1);
+        // 穗：4×5 像素（比杆亮一档，风一吹就看得出来）
+        ctx.fillStyle = headCol;
+        ctx.fillRect(bx + o3 - 1, r.baseY - h1 - h2 - h3 - 5, sw + 2, 5);
+      }
+    }
+  }
+
+  /**
+   * 导航底边（视口 px）。墙顶室内灯带必须从 nav 之下起画：
+   * T4 把灯带画在 y=0..litH，整条被 sticky nav（桌面 ~57px / 窄屏更高）盖住不可见。
+   * nav 高度随断点变，所以只能实测，不许写死 60/94；拿不到就 0。
+   * 取带底色的 `header.nav`（sticky 那条），退而求其次内层 `nav`。
+   */
+  function navBottomPx(): number {
+    const el =
+      document.querySelector<HTMLElement>('header.nav') ??
+      document.querySelector<HTMLElement>('nav');
+    return el ? Math.max(0, Math.round(el.getBoundingClientRect().bottom)) : 0;
+  }
+
+  /**
+   * 墙面（窗洞之外的「一间夜晚的房间」）。
+   * 真窗化（T4）后墙不再是一层单色底：基底 wallFace + 墙顶室内灯浅阶
+   * （wallLit，约 wall.top 40% 高的一阶亮带，下缘 1px 硬边——灯从上打下来）。
+   * T5 修：灯带起点从 0 下移到 **nav 底边之下**（原先整条被 sticky nav 盖住）。
+   * 下墙（窗台以下到画布底）与基底同色，不再叠层（窗台自带下缘暗影）。
+   */
+  function drawWall() {
+    wallLitTopFx = navBottomPx();
+    ctx.globalAlpha = worldAlpha;
+    ctx.fillStyle = wallFace(palette);
+    ctx.fillRect(0, 0, w, h);
+    // 墙顶室内灯浅阶：阶梯矩形，不用渐变（像素语言里「渐变」就是硬台阶）
+    const litH = Math.round(win.wall.top * 0.4);
+    ctx.fillStyle = wallLit(palette);
+    ctx.fillRect(0, wallLitTopFx, w, litH);
+    // 亮带下缘 1px 台阶硬边（灯沿暗线，让浅阶读得出边界）
+    ctx.fillStyle = lerpHex(wallFace(palette), '#000000', 0.18);
+    ctx.fillRect(0, wallLitTopFx + litH, w, 1);
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * 窗体结构：框体（画在墙上）+ 洞深阶梯（画在洞内、盖在景上）+ 夜暖晕 + 玻璃高光 + 窗台。
+   *
+   * 真窗语法（T4）：窗体单元 = 玻璃区（win.x/y/w/h）+ 框带（frame 宽），不再满幅。
+   * 从外到内的剖面：墙 → 框面 → 框内棱背光 → 洞深阶梯（洞缘最亮 → 贴玻璃最暗）
+   * → 框投景内阴影 → 玻璃（景）→ 夜暖晕 → 高光 → 窗台。
+   *
+   * **拆棂观景窗（ADR-0028，2026-10-02 作者批）**：横梃/竖梃（分格棂）退役——
+   * 「铁窗/监狱隐喻」的几何源头就是它们；「这是窗」由框 + 洞深阶梯 + 窗台
+   * 承担（推翻 ADR-0024 的「窗棂是最强窗线索」，0027 整扇窗语法不动）。
+   * 高光曾压在棂上的划痕问题（2026-09-26 B1-b）随棂一并消失。
+   *
+   * 室内侧 = 主题色（接光 sunlitFrame 三档）；景 = 窗外实景，不随主题（ADR-0021 单档）。
+   * 风拍窗颤只移框（调用处 translate(shake,0)），墙与洞深阶梯不颤。
+   */
+  function drawWindowFrame(sky: ResolvedSky, win: WindowSpec, daylight: number) {
+    const prof = frameProfile(palette, sky.bands[4]!);
+    // 接光（去铁窗 2026-10-02）：框不再用全天死灰的 prof.face——窗是屋里唯一
+    // 接太阳的面，白天晒暖晒亮、夜里沉暗。reveal/lip 与天光挂钩，仍走 frameProfile。
+    const lit = sunlitFrame(palette, daylight);
+    const face = lit.face; // 框面（随昼夜接光的木面）
+    const faceShade = lit.faceShade; // 背光档（框内棱/槽底）
+    const faceLit = lit.faceLit; // 受光档（框外棱）
+    const lip = prof.lip; // 台沿 / 框与玻璃的缝
+    // 夜里内缘暖受光带：室内灯从屋里照在框内棱上（与面板顶缘 accent 受光带同语言；
+    // 暖金 = T9 灯罩亮缝同源色）。白天 alpha=0 一根线都不画。
+    const warmA = warmEdgeAlpha(daylight);
+    const warmCol = lerpHex(palette.accent, '#ffffff', 0.25);
+    const glass = lerpHex(sky.bands[0]!, '#ffffff', 0.55); // 玻璃高光（天空色提亮）
+    const F = win.frame;
+    const x0 = win.x;
+    const y0 = win.y;
+    const x1 = win.x + win.w;
+    const y1 = win.y + win.h;
+    // 洞深阶梯总厚：从玻璃向室内（revealSteps[0] 贴玻璃最暗）
+    const depth = win.revealSteps.reduce((a, b) => a + b, 0);
+    // 每阶暗度：index 0 贴玻璃（最暗 0.45）→ 向外逐级变亮 → 最外阶 = 框面（0）。
+    // 用阶数派生（不是写死三档），改 WINDOW.REVEAL_STEPS 时比例自动跟随。
+    const nSteps = win.revealSteps.length;
+    const stepCol = win.revealSteps.map((_, k) =>
+      lerpHex(face, '#000000', ((nSteps - 1 - k) / Math.max(1, nSteps - 1)) * 0.45)
+    );
+    ctx.globalAlpha = worldAlpha;
+
+    // —— ① 框体：洞外缘三条带（下边是窗台，不铺满）
+    ctx.fillStyle = face;
+    ctx.fillRect(x0 - F, y0 - F, win.w + 2 * F, F); // 顶
+    ctx.fillRect(x0 - F, y0, F, win.h + F); // 左
+    ctx.fillRect(x1, y0, F, win.h + F); // 右
+    // —— ② 框外棱 1px 受光（把框从墙上「掀」起来）
+    ctx.fillStyle = faceLit;
+    ctx.fillRect(x0 - F, y0 - F, win.w + 2 * F, 1);
+    ctx.fillRect(x0 - F, y0 - F, 1, win.h + 2 * F);
+    ctx.fillRect(x1 + F - 1, y0 - F, 1, win.h + 2 * F);
+    // —— ③ 框内棱 1px 背光（贴玻璃侧的框缘，与洞深阶梯之间的一道槽）
+    ctx.fillStyle = faceShade;
+    ctx.fillRect(x0, y0 - 1, win.w, 1);
+    ctx.fillRect(x0 - 1, y0, 1, win.h);
+    ctx.fillRect(x1, y0, 1, win.h);
+
+    // —— ③b 框体材质（2026-10-30 白天美术）：夜里平涂的框被暗色和暖晕盖住，
+    //     白天整块读作「塑料板」。补两处「这是木框」的证据，全部 1px 结构色：
+    //     ① 四角斜接缝（45° 1px 暗线，从外角收到内角）—— 框是四根料拼的；
+    //     ② 窗台板缝（竖向 1px 暗线，等距）—— 台面是几块板拼的。
+    //     两条都用 faceShade（同源），夜里自然淡到看不见，白天给出材质层次。
+    ctx.fillStyle = faceShade;
+    ctx.globalAlpha = worldAlpha * 0.55;
+    for (let k = 0; k < F; k++) {
+      ctx.fillRect(x0 - F + k, y0 - F + k, 1, 1); // 左上
+      ctx.fillRect(x1 + F - 1 - k, y0 - F + k, 1, 1); // 右上
+    }
+    // ③ 竖框板缝：与窗台同一套「木料拼接」语言，每 ~96px 一道横向暗线。
+    //    只有 18px 厚的竖框在白天是一条纯色带，加缝才读得出是框料而不是色块。
+    const vSeam = Math.max(48, Math.round((win.h + F) / Math.max(1, Math.round((win.h + F) / 96))));
+    ctx.globalAlpha = worldAlpha * 0.4;
+    for (let yy = y0 + vSeam; yy < y0 + win.h + F - 8; yy += vSeam) {
+      ctx.fillRect(x0 - F, yy, F, 1);
+      ctx.fillRect(x1, yy, F, 1);
+    }
+    ctx.globalAlpha = worldAlpha;
+
+    // —— ④ 洞深阶梯（画在洞内缘、盖在景上）：上/左/右三面，洞缘最亮 → 贴玻璃最暗
+    // 上（全洞宽）
+    let cur = y0;
+    for (let k = nSteps - 1; k >= 0; k--) {
+      const th = win.revealSteps[k]!;
+      ctx.fillStyle = stepCol[k]!;
+      ctx.fillRect(x0, cur, win.w, th);
+      cur += th;
+    }
+    // 贴玻璃 1px 暗缝（lip）
+    ctx.fillStyle = lip;
+    ctx.fillRect(x0, cur, win.w, 1);
+    // 左（角上让给上阶，从 y0+depth 起）
+    cur = x0;
+    for (let k = nSteps - 1; k >= 0; k--) {
+      const th = win.revealSteps[k]!;
+      ctx.fillStyle = stepCol[k]!;
+      ctx.fillRect(cur, y0 + depth, th, win.h - depth);
+      cur += th;
+    }
+    ctx.fillStyle = lip;
+    ctx.fillRect(cur, y0 + depth, 1, win.h - depth);
+    // 右
+    cur = x1;
+    for (let k = nSteps - 1; k >= 0; k--) {
+      const th = win.revealSteps[k]!;
+      ctx.fillStyle = stepCol[k]!;
+      ctx.fillRect(cur - th, y0 + depth, th, win.h - depth);
+      cur -= th;
+    }
+    ctx.fillStyle = lip;
+    ctx.fillRect(cur - 1, y0 + depth, 1, win.h - depth);
+
+    // —— ⑤ 框投在景上的内阴影（像素阶）：紧贴洞深阶梯内侧（更贴玻璃）
+    ctx.fillStyle = '#000000';
+    const gx0 = x0 + depth + 1; // 玻璃可见区（lip 之内）
+    const gx1 = x1 - depth - 1;
+    const gy0 = y0 + depth + 1;
+    for (let k = 0; k < win.shadow; k += 2) {
+    ctx.globalAlpha = worldAlpha * (0.3 - k * 0.05);
+    ctx.fillRect(gx0, gy0 + k, gx1 - gx0, 2);
+    ctx.fillRect(gx0 + k, gy0, 2, y1 - gy0);
+    ctx.fillRect(gx1 - 2 - k, gy0, 2, y1 - gy0);
+  }
+  ctx.globalAlpha = worldAlpha;
+
+  // —— 7) 夜暖晕（ADR-0028）：夜里室内灯光漫上玻璃，从窗底升起三段暖带。
+  // 裁进玻璃区（与洞深阶梯/内阴影同层，光只活在玻璃上）；
+  // 白天 glassWarm 返 null，一层都不画。
+  const warmBands = glassWarm({ x: win.x, y: win.y, w: win.w, h: win.h }, daylight);
+  if (warmBands) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, win.w, win.h);
+    ctx.clip();
+    // 2026-10-06 评审二轮：暖晕要读出「暖」，绘制色不能用 0.35 混白的淡金
+    // （R−B 只剩 87，叠完仍偏冷）——与反光斑同用 0.15 混白的纯暖
+    // 2026-10-30 S8：三段 fillRect 的**段间硬边**在首屏底部读成「湖水分层」
+    // （三段各 50 行、alpha 0.09/0.18/0.30，段顶就是一条直线）。改成以三段
+    // 中点为停靠点的**线性渐变**——同一个 alpha 剖面，边没了。
+    // 注意 glassWarm 返回的顺序是**从窗底往上**（index 0 = 最下段）——
+    // 直接拿 [0] 当顶会让 gTop > gBottom，fillRect 高度为负 = 整个晕不画（踩过）。
+    const gTop = Math.min(...warmBands.map((b) => b.y));
+    const gBottom = Math.max(...warmBands.map((b) => b.y + b.h));
+    const lastBand = warmBands[0]!;
+    const warmCol = lerpHex(palette.accent, '#ffffff', 0.15); // 与 T9 灯池同源暖
+    const [wr, wg, wb] = hexToRgb(warmCol);
+    const grad = ctx.createLinearGradient(0, gTop, 0, gBottom);
+    grad.addColorStop(0, `rgba(${wr},${wg},${wb},0)`);
+    // 二次收口（2026-10-30 S8 二轮）：三段等权铺开会把整条 148px 晕带读成
+    // 「横贯湖面的暖雾」；按 mid^1.5 压前段，暖只贴在窗底那一带（hem，不是 ribbon）。
+    for (const b of warmBands) {
+      const mid = (b.y + b.h / 2 - gTop) / Math.max(1, gBottom - gTop);
+      const a = b.alpha * Math.pow(mid, 1.5);
+      grad.addColorStop(Math.min(1, Math.max(0, mid)), `rgba(${wr},${wg},${wb},${a.toFixed(3)})`);
+    }
+    grad.addColorStop(1, `rgba(${wr},${wg},${wb},${lastBand.alpha})`);
+    ctx.globalAlpha = worldAlpha;
+    ctx.fillStyle = grad;
+    ctx.fillRect(x0, gTop, win.w, gBottom - gTop);
+    ctx.restore();
+    ctx.globalAlpha = worldAlpha;
+  }
+
+  // —— 8) 夜里框内棱暖受光线（去铁窗 2026-10-02）：室内灯把框内三边照暖。
+  // 白天 warmA=0 一根不画；夜里 1px 暖金（与面板顶缘 accent 受光带同语言，
+  // 色 = T9 灯罩亮缝同源）。棂已随 ADR-0028 退役，暖棱只剩框内三边。
+  if (warmA > 0) {
+    ctx.globalAlpha = worldAlpha * warmA;
+    ctx.fillStyle = warmCol;
+    ctx.fillRect(x0, y0 - 1, win.w, 1); // 内棱：上
+    ctx.fillRect(x0 - 1, y0, 1, win.h); // 左
+    ctx.fillRect(x1, y0, 1, win.h); // 右
+    ctx.globalAlpha = worldAlpha;
+  }
+
+  // —— 9) 玻璃高光：两道 2:1 斜向高光带，**只画玻璃上段**（≈42% 洞高，两阶淡出），
+  //        **裁进玻璃区**（修 T3 漏出洞外的穿帮）。ADR-0027 整扇窗后玻璃 = 全视口，
+  //        原来画到洞底的整带斜穿整个天空/山/水，静态读作一道划痕（2026-10-03
+  //        作者评审 P0①）——收进上缘后读作「玻璃上缘的反光」，地平线以上收干净。
+  //        2026-10-05 评审②：高光是「太阳在玻璃上的反光」——alpha 乘昼长
+  //        （夜里保 20% 底：玻璃物性还在，但暗天空上斜贯 400px 的灰线读作划痕）。
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, win.w, win.h);
+  ctx.clip();
+    const sheenK = 0.2 + 0.8 * clamp01(daylight);
+    const hx0 = x0 + Math.round(win.w * 0.58);
+    const sheenFade = y0 + Math.round(win.h * 0.28); // 淡出起点（全阶 → 半阶）
+    const sheenEnd = y0 + Math.round(win.h * 0.42);  // 上段终点（远在地平线之上）
+    ctx.fillStyle = glass;
+    ctx.globalAlpha = worldAlpha * 0.09 * sheenK;
+    for (let yy = y0; yy < sheenFade; yy += 2) {
+      const gx = hx0 + ((y1 - yy) >> 1); // 斜率 2:1 的阶梯列
+      ctx.fillRect(gx, yy, 8, 2);
+    }
+    ctx.globalAlpha = worldAlpha * 0.045 * sheenK;
+    for (let yy = sheenFade; yy < sheenEnd; yy += 2) {
+      const gx = hx0 + ((y1 - yy) >> 1);
+      ctx.fillRect(gx, yy, 8, 2);
+    }
+    ctx.globalAlpha = worldAlpha * 0.06 * sheenK;
+    for (let yy = y0 + 6; yy < sheenEnd; yy += 2) {
+      const gx = hx0 + 26 + ((y1 - yy) >> 1);
+      ctx.fillRect(gx, yy, 4, 2);
+    }
+    ctx.restore();
+
+    // —— 8) 窗台：横向 = 窗体宽（框外缘到框外缘）；台体下方留给下墙，不铺满
+    const sx = x0 - F;
+    const sw = win.w + 2 * F;
+    ctx.globalAlpha = worldAlpha;
+    ctx.fillStyle = lerpHex(face, '#ffffff', 0.3);
+    ctx.fillRect(sx, y1, sw, 5); // 台面（受光）
+    ctx.fillStyle = face;
+    ctx.fillRect(sx, y1 + 5, sw, win.sill - 5); // 台体
+    // 台面板缝（2026-10-30 白天美术）：等距竖向 1px 暗线，台面读作「几块板拼的」。
+    // 间隔按台宽整数分布（不写死绝对坐标），夜里自然淡到看不见。
+    const seamGap = Math.max(48, Math.round(sw / Math.max(1, Math.round(sw / 96))));
+    ctx.fillStyle = lerpHex(face, '#000000', 0.28);
+    ctx.globalAlpha = worldAlpha * 0.5;
+    for (let sxp = sx + seamGap; sxp < sx + sw - 8; sxp += seamGap) {
+      ctx.fillRect(sxp, y1 + 6, 1, Math.max(1, win.sill - 9));
+    }
+    ctx.globalAlpha = worldAlpha;
+    ctx.fillStyle = face;
+    ctx.fillStyle = palette.accent;
+    ctx.fillRect(sx, y1 + win.sill - 2, sw, 2); // 台沿受光
+    ctx.fillStyle = lip;
+    ctx.fillRect(sx, y1 + win.sill - 1, sw, 1); // 台沿暗线
+    ctx.globalAlpha = worldAlpha * 0.18;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(sx, y1 + win.sill, sw, 1); // 台沿下缘黑影
+    ctx.globalAlpha = 1;
+
+    // —— 7.5) 首屏滚动提示（2026-10-30 W1·N3）——
+    // 首屏是整扇窗、零 DOM 内容（ADR-0027），桌面端因此没有任何「下面还有东西」的信号
+    // （SCROLL ↓ 住在第二屏的 Hero 里，且 ≤560px 才显示）。
+    // 画进 canvas 而不是加 DOM：ADR 的「零 DOM」是硬约束，而这枚 ↓ 是景观的一部分。
+    // 画在窗台**之后**——先画会被台体盖掉（第一版就踩了：箭头整个消失）。
+    // 几何从窗台派生：台体上 40% 处，随第一次滚动（1/3 屏）淡出。
+    // reduced-motion 不闪但在场（提示是信息，不是装饰）。
+    {
+      const scrolled = window.scrollY || 0;
+      const fade = clamp01(1 - scrolled / Math.max(1, h * 0.32));
+      if (fade > 0.01) {
+        const blink = reduced.matches ? 1 : 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 0.0022));
+        const hx = Math.round(win.x + win.w / 2);
+        const hy = Math.round(y1 + win.sill * 0.4);
+        ctx.globalAlpha = worldAlpha * fade * blink;
+        ctx.fillStyle = lerpHex(palette.accent, '#ffffff', 0.45);
+        // 实心倒三角 9×5（整数格）：1x 下也读得出，不是一根线
+        ctx.fillRect(hx - 4, hy, 9, 1);
+        ctx.fillRect(hx - 3, hy + 1, 7, 1);
+        ctx.fillRect(hx - 2, hy + 2, 5, 1);
+        ctx.fillRect(hx - 1, hy + 3, 3, 1);
+        ctx.fillRect(hx, hy + 4, 1, 1);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  /**
+   * 窗台小植物（T6 窗台陈设）：靠左端一盆像素绿植——「室内有人生活」的克制暗示。
+   * 不抢戏：总高 ≤14px、总宽 ≤10px，只有 4 个整数矩形（盆两档 + 三片竖条叶）。
+   *
+   * 位置：底 = win.y + win.h（立在窗台台面顶边，向上长），整簇落在左框面内侧
+   * （px0 = win.x - frame + 11）——这样它身后就是一块**单一底色**的框面，
+   * e2e 的对照带能与它同背景，判据不被「框 vs 景」的固有差污染。
+   *
+   * 颜色全部派生（零新字面量，只借 '#000000'/'#ffffff' 两个 lerp 锚点），且从
+   * **框面实色**（sunlitFrame 接光后的 face，调用方传入）派生——植物住在框面上，
+   * 旧版从 prof.face/ridgeNear 独立派生，去铁窗轮框面改接光后夜里与框面同化、
+   * 整株隐形（2026-10-03 像素级取证）；现改为对框面的保证正差，任何时段都浮出来。
+   *
+   * 微摆：风 ≥0.2 时**最高的那片叶**顶部 2 行横移 ±1px（低频正弦 sin(t*0.02)，
+   * 整数）；风小或 reduced-motion 恒 0（reduced-motion 必须完全静止，硬约束）。
+   * 调用处已包在 translate(shake,0) 里，所以它随窗颤一起动；夜里不发光
+   * （不参与 moonSpill/反光层）。
+   */
+  function drawSillPlant(win: WindowSpec, t: number, frameFace: string) {
+    ctx.globalAlpha = worldAlpha;
+    const pot = lerpHex(frameFace, '#000000', 0.25);
+    const leafDark = lerpHex(frameFace, '#ffffff', 0.22);
+    const leafLit = lerpHex(frameFace, '#ffffff', 0.42);
+    const px0 = win.x - win.frame + 11; // 窗台左端内侧 11px（≈ 任务给的 12px，整簇留在框面上）
+    const by = win.y + win.h; // 窗台台面顶边：盆底坐这里
+    // 风微摆：只有顶部 2 行叶尖动，整数 ±1px（reduced-motion / 风小 = 0）
+    const sway = !reduced.matches && fx.wind >= 0.2 ? Math.round(Math.sin(t * 0.02)) : 0;
+    // 盆：上沿一档宽、盆身略窄（单色两档的像素陶盆）
+    ctx.fillStyle = pot;
+    ctx.fillRect(px0, by - 5, 6, 2);
+    ctx.fillRect(px0 + 1, by - 3, 4, 3);
+    // 叶：左右两片 1px 竖条（高低错落，深档）
+    ctx.fillStyle = leafDark;
+    ctx.fillRect(px0, by - 9, 1, 4);
+    ctx.fillRect(px0 + 5, by - 10, 1, 5);
+    // 中间最高的一片叶（2px 宽，亮档）：顶 2 行随风横移，其余固定
+    ctx.fillStyle = leafLit;
+    ctx.fillRect(px0 + 2 + sway, by - 13, 2, 2);
+    ctx.fillRect(px0 + 2, by - 11, 2, 6);
+  }
+
+  /**
+   * 窗边工位静物（T8）：地板 + 踢脚线 → 书桌（面板顶缘 2px accent）→ CRT 壳（熄灭的近黑屏）
+   * → 台灯（罩内下缘 2px 亮缝，T9 的光源位）→ 茶杯 → 一摞书。卡带本体由 DOM（T10）画，
+   * 本函数只消费 `deskSpec` 给的锚点。
+   *
+   * 物理位置：桌在**墙上**、让开窗框；静物在**屋里最前景**，所以画在框/月光带之后、
+   * 天气粒子之前——月光落在桌面与墙上的亮带不会被静物盖掉（先画光、再画挡光的物件）。
+   *
+   * 色全派生（lerp 锚点只 '#000000' / '#ffffff'，其余取 frameProfile / wallFace / palette / sky）：
+   * 桌面比墙亮（受光面）、前立面比桌面暗（背光）、腿再暗一档；CRT 屏 = 近黑。
+   * 全部 fillRect 整数、无渐变、零新字面量色。
+   *
+   * `win` 仅作签名对称（几何全在 deskSpec 里从 w/h 重建，已含窗约束）；
+   * 保留它是为了 T9——灯池 / 屏光要按窗位落，届时直接拿 win 用。
+   */
+  function drawDeskRoom(sky: ResolvedSky, win: WindowSpec, t: number) {
+    const d = deskSpec(w, h);
+    if (!d) return; // 窄屏：整组工位退场（洞已占 84% 宽，没地方摆桌子）
+    const prof = frameProfile(palette, sky.bands[4]!);
+    const face = prof.face; // 室内受光木面（框面同档）
+    const faceLit = prof.faceLit; // 受光棱
+    const faceShade = prof.faceShade; // 背光档
+    const wall = wallFace(palette);
+    // 器物受光棱：工位离台灯近，棱线比窗框 faceLit 再亮一档——旧 faceLit 在
+    // 第二屏 scrim 收敛下与背景几乎同亮度，CRT/台灯读作剪影（2026-10-03 P1③）
+    const litHard = lerpHex(face, '#ffffff', 0.34);
+    // 两种光源的棱色（2026-10-29 方案 B）：台灯在**右**（暖），窗外天光在**上**（冷）。
+    // 之前全场景用同一个 litHard 三边描，等于承认了无方向光（三方评审一致指出的矛盾）。
+    const litWarm = lerpHex(palette.accent, '#ffffff', 0.3);
+    const litCold = lerpHex(sky.moon, '#ffffff', 0.5);
+
+    // —— 色板（全部派生）——
+    const floorCol = lerpHex(wall, '#000000', 0.32); // 地板：比墙暗一档
+    // 踢脚线：受光亮线。2026-10-29 由 wall+0.12 提到 +0.30 —— 过 scrim 后旧值只有
+    // 1.1:1，墙与地的交界读不出来（房间没有地平线）。现在它是室内的「地平线」，
+    // 与窗外那扇窗的地平线同一套语法。
+    const baseboardCol = lerpHex(wall, '#ffffff', 0.3);
+    // 桌面受光面。任务给的锚点是 wallFace+白 0.10，实测那会让**桌面比前立面暗**
+    // （face 本身已比 wallFace 亮 0.34 档）→ 光照读反。取 0.40 白（2026-10-29 由
+    // 0.30 上调）：第二屏 scrim 由平铺 72% 改为梯度后，0.30 档过 scrim 只剩 1.09:1，
+    // 整间屋子读作空墙（截图实锤）。
+    // 再掺 4% 窗灯金——木面比纯蓝灰多一点暖（锚点仍只黑/白 + 主题 token）。
+    const topCol = lerpHex(lerpHex(wall, '#ffffff', 0.55), palette.accent, 0.04);
+    // 前立面（围板）：2026-10-29 由 face−0.08 提到 face+0.18 —— 围板是桌身最大的
+    // 面积，暗于框面时整张桌子在 scrim 下变成剪影（旧值过 scrim 后与背景 1.09:1）。
+    const apronCol = lerpHex(face, '#ffffff', 0.24);
+    const legCol = lerpHex(apronCol, '#000000', 0.22); // 腿：再暗一档
+    const floorSeamCol = lerpHex(floorCol, '#000000', 0.5); // 地板缝
+    const contactCol = lerpHex(floorCol, '#000000', 0.45); // 桌脚接触阴影
+    const objShadowCol = lerpHex(topCol, '#000000', 0.5); // 器物在桌面上的接触阴影
+    const underCol = lerpHex(wall, '#000000', 0.38); // 桌下暗腔（腿间）
+    const bodyCol = lerpHex(face, '#ffffff', 0.06); // CRT 机身 / 灯体（scrim 后要立住，不能低于框面）
+    const screenCol = lerpHex(face, '#000000', 0.62); // 屏（T9 才亮）
+    const bezelCol = faceShade; // 屏内凹唇
+    const lampBodyCol = lerpHex(face, '#000000', 0.12);
+    const lampGlowCol = lerpHex(palette.accent, '#ffffff', 0.25); // 罩内亮缝（T9 光源位）
+    const mugCol = lerpHex(face, '#ffffff', 0.32); // 杯体：比受光棱再亮一档（旧 faceLit 过暗不可辨）
+    const mugRimCol = lerpHex(faceLit, '#000000', 0.5);
+    const bookCols = [
+      lerpHex(face, '#000000', 0.14), // 最下一本（背光）
+      lerpHex(lerpHex(face, '#000000', 0.02), sky.ridgeNear, 0.25), // 中间：掺一点窗外山色
+      lerpHex(face, '#ffffff', 0.22), // 最上一本（受光）
+    ];
+
+    const D = d.desk;
+    ctx.globalAlpha = worldAlpha;
+
+    // ⓪ 墙脚接触暗带（2026-10-29 方案 B）：桌子与墙之间原先没有任何交界面，
+    //    所以整张桌子读作「贴在墙上」。在桌沿上方铺 3 阶递减的暗带（越上越淡），
+    //    桌子立刻有了「站在墙前」的厚度。画在桌面板之前 → 桌面会盖住交界处。
+    //    注意：hero 段的墙其实是 body 背景（canvas 那里是透明的），所以「墙色压暗」
+    //    几乎没有效果（实测 1.00:1）。必须压到比背景更暗才读得出来。
+    for (let k = 0; k < 3; k++) {
+      ctx.globalAlpha = worldAlpha * (0.85 - k * 0.28);
+      ctx.fillStyle = lerpHex(wall, '#000000', 0.92);
+      ctx.fillRect(D.x0, D.top - 1 - k * 3, D.x1 - D.x0, 3);
+    }
+    ctx.globalAlpha = worldAlpha;
+
+    // ① 地板带 + 踢脚线；地板缝越靠前越疏（纵深）
+    const floorH = h - d.floorY;
+    ctx.fillStyle = floorCol;
+    ctx.fillRect(0, d.floorY, w, floorH);
+    ctx.fillStyle = floorSeamCol;
+    for (const f of [0.2, 0.42, 0.66, 0.9]) {
+      const y = d.floorY + Math.round(floorH * f);
+      if (y < h) ctx.fillRect(0, y, w, 1);
+    }
+    ctx.fillStyle = baseboardCol;
+    ctx.fillRect(0, d.baseboard, w, 1);
+
+    // ② 桌脚接触阴影：三阶向前淡出（桌子压在地板上，且地板向前方沉下去）
+    for (let k = 0; k < 3; k++) {
+      ctx.globalAlpha = worldAlpha * (0.42 - k * 0.13);
+      ctx.fillStyle = contactCol;
+      ctx.fillRect(D.x0, d.floorY + k * 2, D.x1 - D.x0, 2);
+    }
+    ctx.globalAlpha = worldAlpha;
+
+    // ③ 腿（两端各一根）+ 前立面（围板）。腿间先铺一层**桌下暗腔**：
+    //    直接露墙色时腿与墙同暗、桌子看着浮空；压暗一档后腿才立得住（且仍读作「桌下是空的」）。
+    const legH = d.floorY - D.front;
+    ctx.globalAlpha = worldAlpha * 0.32;
+    ctx.fillStyle = underCol;
+    ctx.fillRect(D.x0, D.front, D.x1 - D.x0, legH);
+    ctx.globalAlpha = worldAlpha;
+    // 腿与前立面同色（围板 + 两条腿读成一个「几」形前面板）
+    ctx.fillStyle = apronCol;
+    ctx.fillRect(D.x0, D.front, D.legW, legH);
+    ctx.fillRect(D.x1 - D.legW, D.front, D.legW, legH);
+    // 围板 4 段受光阶梯（2026-10-29 美术精修）：旧版一整块平色，100px 高的立面
+    // 在截图里读作「一块灰板」，光落不下来。顶部近桌沿最亮，向下每段暗 7%。
+    const apY0 = D.top + D.surface;
+    const apH = D.front - apY0;
+    const APRON_BANDS = 4;
+    for (let b = 0; b < APRON_BANDS; b++) {
+      const y0 = apY0 + Math.round((apH * b) / APRON_BANDS);
+      const y1 = apY0 + Math.round((apH * (b + 1)) / APRON_BANDS);
+      ctx.fillStyle = lerpHex(apronCol, '#000000', 0.035 * b);
+      ctx.fillRect(D.x0, y0, D.x1 - D.x0, y1 - y0);
+    }
+    // 围板下缘 1px 暗线（围板「凸出来」）
+    ctx.fillStyle = legCol;
+    ctx.fillRect(D.x0, D.front - 1, D.x1 - D.x0, 1);
+    // 抽屉：一条面缝 + 居中把手（让「一张桌子」读得出来，而不是一块面板）
+    const drawY = D.top + D.surface + Math.round((D.front - D.top - D.surface) * 0.34);
+    ctx.fillStyle = faceShade;
+    ctx.fillRect(D.x0 + 6, drawY, D.x1 - D.x0 - 12, 1);
+    const handleW = Math.min(28, Math.round((D.x1 - D.x0) * 0.08));
+    ctx.fillStyle = litHard;
+    ctx.fillRect(D.x0 + Math.round((D.x1 - D.x0 - handleW) / 2), drawY + 5, handleW, 2);
+
+    // ④ 桌面板：受光面 + 顶缘 2px accent（与全站面板顶缘同语言）
+    ctx.fillStyle = topCol;
+    ctx.fillRect(D.x0, D.top, D.x1 - D.x0, D.surface);
+    ctx.fillStyle = palette.accent;
+    ctx.fillRect(D.x0, D.top, D.x1 - D.x0, 2);
+    // 桌面下缘 1px 暗线（桌面板「厚」一档，与围板分开）
+    ctx.fillStyle = objShadowCol;
+    ctx.fillRect(D.x0, D.top + D.surface - 1, D.x1 - D.x0, 1);
+
+    // ④b 器物在桌面上的接触阴影（把每件东西压在桌面上，不是浮在墙上）
+    // 接触阴影（2026-10-29）：旧版等宽 2px 单阶，读作一条灰带。改成两阶楔——
+    // 内段窄而深（真接触）、外段宽而浅（漫射），加宽而不是加深才有「压下去」的感觉。
+    const contact = (x: number, wd: number) => {
+      ctx.fillStyle = objShadowCol;
+      ctx.globalAlpha = worldAlpha * 0.18;
+      ctx.fillRect(x, D.top + 2, wd, 2);
+      const inner = Math.round(wd * 0.72);
+      ctx.globalAlpha = worldAlpha * 0.4;
+      ctx.fillRect(x + Math.round((wd - inner) / 2), D.top + 2, inner, 2);
+      ctx.globalAlpha = worldAlpha;
+    };
+
+    // 背光侧 1px 暗描边（方案 B）：暗墙上的小物靠自己的暗边剥离，
+    // 比继续提白省对比度预算，也与全站 1px 线语言一致。
+    const backRim = (x: number, y: number, wd: number, ht: number) => {
+      ctx.fillStyle = lerpHex(wall, '#000000', 0.35);
+      ctx.fillRect(x, y, 1, ht);
+      ctx.fillRect(x, y + ht - 1, wd, 1);
+    };
+
+    // ⑤ CRT 壳：机身 → 外缘受光棱 → 内凹屏 → 底座 → 电源灯
+    const c = d.crt;
+    const bodyH = c.stand.neck.y - c.y;
+    ctx.fillStyle = bodyCol;
+    ctx.fillRect(c.x, c.y, c.w, bodyH);
+    // 外缘受光棱：顶 = 窗外天光（冷）、右 = 台灯（暖）、左 = 背光面（暗）。
+    // 旧版三边同亮是「描边」不是「光」——同一画面里台灯在右，左边没有理由亮。
+    ctx.fillStyle = litCold;
+    ctx.fillRect(c.x, c.y, c.w, 1);
+    ctx.fillStyle = litWarm;
+    ctx.fillRect(c.x + c.w - 1, c.y, 1, bodyH);
+    ctx.fillStyle = faceShade;
+    ctx.fillRect(c.x, c.y + 1, 1, bodyH - 1);
+    const sc = c.screen;
+    ctx.fillStyle = bezelCol; // 屏内凹唇（1px）
+    ctx.fillRect(sc.x - 1, sc.y - 1, sc.w + 2, sc.h + 2);
+    ctx.fillStyle = screenCol; // 屏（熄灭）
+    ctx.fillRect(sc.x, sc.y, sc.w, sc.h);
+    ctx.fillStyle = bodyCol; // 底座：颈 + 脚
+    ctx.fillRect(c.stand.neck.x, c.stand.neck.y, c.stand.neck.w, c.stand.neck.h);
+    ctx.fillRect(c.stand.foot.x, c.stand.foot.y, c.stand.foot.w, c.stand.foot.h);
+    ctx.fillStyle = faceShade; // 脚底暗线（底座「坐在桌面上」）
+    ctx.fillRect(c.stand.foot.x, c.stand.foot.y + c.stand.foot.h - 1, c.stand.foot.w, 1);
+    // 电源灯（chin 右侧 2×2）+ 微光晕（T9：灯芯右侧 1px 处 3×3 暖光块，alpha 0.15）
+    const chinY = c.y + bodyH - 8;
+    const ledX = c.x + c.w - 14;
+    ctx.fillStyle = lampGlowCol;
+    ctx.globalAlpha = worldAlpha * 0.15;
+    ctx.fillRect(ledX + 2, chinY - 1, 3, 3);
+    ctx.globalAlpha = worldAlpha;
+    ctx.fillStyle = palette.accent; // 电源灯（chin 右侧 2×2）
+    ctx.fillRect(ledX, chinY, 2, 2);
+    contact(c.stand.foot.x, c.stand.foot.w);
+
+    // ⑥ 台灯：底座两阶 + 立杆 + 灯罩梯形 + 罩内下缘 2px 亮缝
+    const L = d.lamp;
+    const baseBot = L.base;
+    const baseTop = L.base - Math.max(3, Math.round(L.baseW * 0.16));
+    ctx.fillStyle = lampBodyCol;
+    ctx.fillRect(L.x - (L.baseW >> 1), baseTop, L.baseW, baseBot - baseTop);
+    ctx.fillRect(L.x - Math.round(L.baseW * 0.32), baseTop - 3, Math.round(L.baseW * 0.64), 3);
+    // 立杆：右缘 1px 受光（台灯在右；ADR-0027 把窗搬到首屏后，本屏已无窗——
+    // 旧注释「光来自右侧的窗」是两屏分家之前的口径，2026-10-29 改正）
+    ctx.fillRect(L.x - (L.poleW >> 1), L.arm, L.poleW, baseTop - L.arm);
+    ctx.fillStyle = litWarm;
+    ctx.fillRect(L.x + (L.poleW >> 1), L.arm, 1, baseTop - L.arm);
+    // 灯罩：逐行梯形（上窄下宽）——像素语言里斜边就是楼梯
+    const shadeTopW = Math.max(6, Math.round(L.shadeW * 0.42));
+    const shadeH = Math.max(2, L.arm - L.head);
+    for (let y = L.head; y < L.arm; y++) {
+      const tt = (y - L.head) / shadeH;
+      const ww = Math.max(2, Math.round(shadeTopW + (L.shadeW - shadeTopW) * tt));
+      ctx.fillStyle = lampBodyCol;
+      ctx.fillRect(L.x - (ww >> 1), y, ww, 1);
+    }
+    // 罩顶受光棱 = 窗外天光（冷）；罩右缘 = 台灯自身暖光
+    ctx.fillStyle = litCold;
+    ctx.fillRect(L.x - (shadeTopW >> 1), L.head, shadeTopW, 1);
+    ctx.fillStyle = litWarm;
+    ctx.fillRect(L.x + (L.shadeW >> 1) - 1, L.arm - 4, 1, 4);
+    // 罩内下缘 2px 亮缝（发光位；比罩口内缩 4px，读作「灯罩里的灯」）
+    ctx.fillStyle = lampGlowCol;
+    ctx.fillRect(L.x - (L.shadeW >> 1) + 4, L.arm - 2, L.shadeW - 8, 2);
+    contact(L.x - (L.baseW >> 1), L.baseW);
+
+    // ⑦ 茶杯：杯口暗线 + 杯体两阶 + 把手（右侧 C 形三笔）
+    const M = d.mug;
+    ctx.fillStyle = mugCol;
+    ctx.fillRect(M.x, M.y, M.w, M.h);
+    ctx.fillStyle = lerpHex(mugCol, '#000000', 0.18);
+    ctx.fillRect(M.x + 1, M.y + 3, M.w - 2, M.h - 3);
+    ctx.fillStyle = mugRimCol;
+    ctx.fillRect(M.x, M.y, M.w, 1);
+    ctx.fillStyle = mugCol;
+    ctx.fillRect(M.x + M.w, M.y + 5, 3, 1);
+    ctx.fillRect(M.x + M.w + 2, M.y + 5, 1, 7);
+    ctx.fillRect(M.x + M.w, M.y + 11, 3, 1);
+    backRim(M.x, M.y, M.w, M.h);
+    ctx.fillStyle = lerpHex(mugCol, '#ffffff', 0.4); // 灯侧 1px 高光（台灯在杯右）
+    ctx.fillRect(M.x + M.w - 1, M.y + 1, 1, M.h - 2);
+    contact(M.x, M.w);
+
+    // ⑧ 一摞书：三本自下而上（高度错落），每本顶缘 1px 受光（纸页边）+ 右端页口
+    const B = d.books;
+    let by = B.y;
+    for (let i = 2; i >= 0; i--) {
+      const bh = B.h[i]!;
+      const col = bookCols[i]!;
+      ctx.fillStyle = col;
+      ctx.fillRect(B.x, by, B.w, bh);
+      ctx.fillStyle = lerpHex(col, '#ffffff', 0.28); // 顶缘纸页
+      ctx.fillRect(B.x, by, B.w, 1);
+      ctx.fillStyle = lerpHex(col, '#000000', 0.32); // 书脊（左端）
+      ctx.fillRect(B.x, by, 2, bh);
+      ctx.fillStyle = lerpHex(col, '#ffffff', 0.45); // 页口（右端）
+      ctx.fillRect(B.x + B.w - 2, by, 2, bh);
+      by += bh;
+    }
+    contact(B.x, B.w);
+
+    // ⑨ 墙面置物板（2026-10-01 作者「hero 用画面不用文字」裁决）：板上三件小物 ——
+    //    盆栽（随风微摆，同窗台植物语言）/ 两本平放书 / 收音机。几何从 deskSpec.shelf
+    //    来（板底 = CRT 顶 − 预留带，永不压 DOM 铭牌）；色全部同源派生，零字面量。
+    const S = d.shelf;
+    // 暗墙上「暗色家具」双重不可读（实测三版教训）：①派生色比背景暗 = 隐形；
+    // ②hero 是第二屏，**scrim 把 canvas 颜色整体向墙色收敛**（交接坑 #2）——
+    // 0.10/0.20 白两版都活不过 scrim，实测只有桌沿 0.30 档能被读出。
+    // 搁板与桌面同档（wall+0.27）：两者各占半屏不打架，物件 0.34–0.50 再拉开。
+    // 2026-10-29（impeccable bolder 二轮）：物件原先 0.22–0.42，实测**比搁板还暗**
+    // （下本 1.72:1 vs 板 1.90:1）——读作板上挖的洞，不是摆在板上的东西。
+    // 现在物件一律亮于板：板 0.27 < 陶盆 0.38 < 收音机身 0.34 / 上本 0.46 < 受光面 0.50。
+    const boardCol = lerpHex(wall, '#ffffff', 0.27);
+    const BK = S.books;
+    const R = S.radio;
+    const P = S.plant;
+    const cx = P.x + Math.round(P.w / 2); // 中叶轴
+    // 盆栽微摆：与窗台植物同一公式（风 ≥0.2 时顶 2 行整数 ±1px，reduced 恒 0）
+    const shelfSway = !reduced.matches && fx.wind >= 0.2 ? Math.round(Math.sin(t * 0.02)) : 0;
+
+    // 板体：主面 + 顶缘受光棱 + 底缘暗线 + 两只托架
+    ctx.fillStyle = boardCol;
+    ctx.fillRect(S.x, S.y, S.w, S.board);
+    ctx.fillStyle = lerpHex(boardCol, '#ffffff', 0.4);
+    ctx.fillRect(S.x, S.y, S.w, 1);
+    ctx.fillStyle = lerpHex(boardCol, '#000000', 0.35);
+    ctx.fillRect(S.x, S.y + S.board - 1, S.w, 1);
+    ctx.fillStyle = lerpHex(boardCol, '#000000', 0.15);
+    ctx.fillRect(S.x + 14, S.y + S.board, 3, 4);
+    ctx.fillRect(S.x + S.w - 17, S.y + S.board, 3, 4);
+    // 板下接触投影（2026-10-30 W4·S4）：没有它，板在 1x 下只是「墙上一根线」。
+    // 三阶递减（0.16 / 0.09 / 0.05），与桌面 contact 同一语言，不加新层。
+    ctx.fillStyle = '#000000';
+    const shA = [0.16, 0.09, 0.05];
+    for (let i = 0; i < shA.length; i++) {
+      ctx.globalAlpha = worldAlpha * shA[i]!;
+      ctx.fillRect(S.x + 2, S.y + S.board + i, S.w - 4, 1);
+    }
+    ctx.globalAlpha = 1;
+
+    // 盆栽（左端）：陶盆两档 + 三叶（中叶顶 2 行随风）；叶提亮到能从暗墙读出
+    ctx.fillStyle = lerpHex(wall, '#ffffff', 0.38);
+    ctx.fillRect(P.x, S.y - 5, Math.round(P.w * 0.7), 2);
+    ctx.fillRect(P.x + 1, S.y - 3, Math.round(P.w * 0.7) - 2, 3);
+    backRim(P.x, S.y - 5, Math.round(P.w * 0.7), 5);
+    ctx.fillStyle = lerpHex(sky.ridgeNear, '#ffffff', 0.66);
+    ctx.fillRect(P.x + 1, S.y - P.h, 1, 7);
+    ctx.fillRect(P.x + P.w - 3, S.y - P.h + 2, 1, 7);
+    ctx.fillStyle = lerpHex(sky.ridgeNear, '#ffffff', 0.82);
+    ctx.fillRect(cx - 1 + shelfSway, S.y - P.h, 2, 2);
+    ctx.fillRect(cx - 1, S.y - P.h + 2, 2, P.h - 8);
+
+    // 书堆（中段）：两本平放，上本顶缘 1px 纸页（比桌面书亮一档：暗墙可读）
+    ctx.fillStyle = lerpHex(wall, '#ffffff', 0.34);
+    ctx.fillRect(BK.x + 3, S.y - 5, BK.w - 6, 5);
+    ctx.fillStyle = lerpHex(wall, '#ffffff', 0.46);
+    ctx.fillRect(BK.x, S.y - 11, BK.w, 6);
+    ctx.fillStyle = lerpHex(lerpHex(wall, '#ffffff', 0.46), '#ffffff', 0.35);
+    ctx.fillRect(BK.x, S.y - 11, BK.w, 1);
+    backRim(BK.x, S.y - 11, BK.w, 11);
+
+    // 收音机（右端）：机身 + 受光面板 + 两道格栅 + 1px accent 调谐线（通电小件）
+    ctx.fillStyle = lerpHex(wall, '#ffffff', 0.34);
+    ctx.fillRect(R.x, S.y - R.h, R.w, R.h);
+    ctx.fillStyle = lerpHex(wall, '#ffffff', 0.5);
+    ctx.fillRect(R.x + 2, S.y - R.h + 2, Math.round(R.w * 0.4), R.h - 4);
+    ctx.fillStyle = lerpHex(wall, '#000000', 0.25);
+    ctx.fillRect(R.x + R.w - Math.round(R.w * 0.34), S.y - R.h + 3, Math.round(R.w * 0.26), 1);
+    ctx.fillRect(R.x + R.w - Math.round(R.w * 0.34), S.y - R.h + 6, Math.round(R.w * 0.26), 1);
+    backRim(R.x, S.y - R.h, R.w, R.h);
+    ctx.fillStyle = palette.accent;
+    ctx.fillRect(R.x + 2, S.y - R.h + 2, 1, R.h - 4);
+
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * 暖光系统（T9）：台灯灯池（桌面近池 + 围板洗光 + 灯后墙光 + 地板光斑）、CRT 屏辉光、
+   * 茶杯热气。这是「夜里真有人在这儿干活」的证据——两种光的对撞：窗外冷月光（T5）
+   * 与桌上暖台灯。光要**克制**：照得亮桌面和灯下一小片墙/地，够读出「暖」就收手。
+   *
+   * 几何全部从 `deskSpec` 派生（不写死像素）；色零字面量（lerp 锚点只 '#000000' /
+   * '#ffffff' + 主题 token / sky）；全整数矩形、无渐变。
+   *
+   * 顺序：在 `drawDeskRoom`（静物）之后——光要**落在**物件上；在天气粒子之前——
+   * 屋内暖光不被窗外雨雪盖（粒子随后裁进窗洞，本层在洞外）。
+   * reduced-motion：灯池不呼吸、热气冻结成两列静止雾点（在场但不飘）。
+   */
+  function drawWarmLight(sky: ResolvedSky, win: WindowSpec, t: number) {
+    const d = deskSpec(w, h);
+    if (!d) return; // 窄屏：整组工位退场，暖光无处可落
+    const D = d.desk;
+    const L = d.lamp;
+    const c = d.crt;
+
+    const prof = frameProfile(palette, sky.bands[4]!);
+    const faceLit = prof.faceLit;
+    // 暖光色：灯芯是暖白钨丝（主题 accent 掺白，不新造字面量）；白掺 0.35 会把
+    // R−B 暖度稀释掉，0.2 更像钨丝（2026-10-03 P1③）
+    const poolCol = lerpHex(palette.accent, '#ffffff', 0.2);
+    // 屏辉光：冷金（月亮冷白与主题金的中间）——显示器自己发的光
+    const glowCol = lerpHex(sky.moon, palette.accent, 0.45);
+    // 呼吸：极轻，周期 ~13s（sin(t·0.008)）；reduced-motion 恒 1（不呼吸）
+    // 呼吸（2026-10-29 方案 B）：旧值 ±10% 且是**全局乘子**（灯池/围板/地板/光锥全乘它），
+    // 于是整间屋子一起明暗 = 房间像一只灯泡在抖，而 CRT 辉光是恒定的 —— 两套模型。
+    // 压到 ±2.5%、周期 13s → 19s：只留「灯是活的」这点气息，不再当节拍器。
+    const breath = reduced.matches ? 1 : 0.975 + 0.025 * Math.sin(t * 0.0055);
+
+    // —— 灯池横向范围：以灯为心，钳进桌宽（lamp.x 近窗，右侧常被 desk.x1 夹）——
+    const poolR = Math.max(64, Math.round(L.shadeW * 2.3)); // 1440：120——旧 80 的灯池在截图里读不出「灯亮着」
+    const pool = (r: number): [number, number] => [
+      Math.max(D.x0, L.x - r),
+      Math.min(D.x1, L.x + r),
+    ];
+    const [o0, o1] = pool(poolR); // 外阶
+    const [m0, m1] = pool(Math.round(poolR * 0.62)); // 中阶
+    const [i0, i1] = pool(Math.round(poolR * 0.3)); // 内阶（灯心）
+
+    lampPoolFx = { x0: o0, x1: o1, y0: D.top + 2, y1: D.front, alpha: 0.14 * breath };
+
+    // ① 桌面近池：外 → 中 → 内 三阶叠加（受光面）。跳过顶缘 2px accent——
+    //    accent 是「面板受光带」的线语言，被灯池染掉会让 T8 的顶缘判据红。
+    const sy = D.top + 2;
+    const sh = Math.max(1, D.surface - 2);
+    const bands: Array<[number, number, number]> = [
+      [o0, o1, 0.085],
+      [m0, m1, 0.125],
+      [i0, i1, 0.175],
+    ];
+    // 台阶之间用抖动过渡（2026-10-30 W3·S6）：三块硬边矩形与新加的梯形光斑
+    // 是两套画法——光斑有溶解边，灯池没有，2x 下能看出「一个软的、一个硬的」。
+    // 每阶两端各 7px 做抖动收口（与 lightTrapezoid 同一条 0.85 递减式）。
+    const FEATHER = 7;
+    ctx.fillStyle = poolCol;
+    for (const [x0, x1, a] of bands) {
+      ctx.globalAlpha = worldAlpha * breath * a;
+      ctx.fillRect(x0 + FEATHER, sy, Math.max(0, x1 - x0 - FEATHER * 2), sh);
+      for (let k = 0; k < FEATHER; k++) {
+        const keep = 0.85 * (1 - k / FEATHER);
+        for (let yy = 0; yy < sh; yy++) {
+          const ly = sy + yy;
+          if (ditherTakeLower(x0 + k, ly, keep)) ctx.fillRect(x0 + k, ly, 1, 1);
+          if (ditherTakeLower(x1 - 1 - k, ly, keep)) ctx.fillRect(x1 - 1 - k, ly, 1, 1);
+        }
+      }
+    }
+
+    // ①b 屏幕冷光落桌面（2026-10-29 方案 B）：显示器是亮着的，桌面正前方一定被它照亮。
+    //    此前这台机器只在自己周围画了 2px 辉光环，等于「发光体不影响房间」。
+    //    冷金 = glowCol（moon × accent 0.45），与屏辉同一色源。
+    const scr = c.screen;
+    const sh2 = Math.max(1, D.surface - 3);
+    const gx0 = Math.max(D.x0, c.x - 6);
+    const gx1 = Math.min(D.x1, c.x + c.w + 6);
+    // 冷光色：glowCol 掺了 45% accent（暖），实测 R−B = +5 —— 那叫暖光。
+    // 屏光单独取更冷的混比（accent 只留 0.12），才能和右半的灯池形成冷暖对撞。
+    const screenLightCol = sky.moon; // 纯月色（掺 accent 会变暖：accent 0.12 实测 B−R 只剩 +5）
+    ctx.fillStyle = screenLightCol;
+    ctx.globalAlpha = worldAlpha * breath * 0.22;
+    ctx.fillRect(gx0, D.top + 2, gx1 - gx0, sh2);
+    // 两侧各 12px 的弱档（光的横向衰减，别让光斑切得像贴纸）
+    ctx.globalAlpha = worldAlpha * breath * 0.1;
+    ctx.fillRect(Math.max(D.x0 + 10, gx0 - 6), D.top + 2, Math.min(6, Math.max(0, gx0 - D.x0 - 10)), sh2);
+    ctx.fillRect(gx1, D.top + 2, Math.min(6, D.x1 - gx1), sh2);
+    // 围板余晖：屏正下方一阶（光溢出桌面后落到立面）
+    ctx.globalAlpha = worldAlpha * breath * 0.05;
+    ctx.fillRect(scr.x, D.top + D.surface, scr.w, 10);
+
+    // ⚠️ ②③④ 段依赖 ctx.fillStyle 仍是 poolCol（旧代码只在 ① 设一次）。
+    //    屏幕冷光插进来后把 fillStyle 改成了月色 → 围板洗光被画成冷色（T9 实测暖度归零）。
+    ctx.fillStyle = poolCol;
+    ctx.globalAlpha = worldAlpha * breath;
+
+    // ② 围板洗光：光从桌沿漫到桌前立面上缘，上亮下暗两阶（把灯池与地板光连起来）
+    const apY = D.top + D.surface;
+    ctx.globalAlpha = worldAlpha * breath * 0.11;
+    ctx.fillRect(i0, apY, i1 - i0, Math.min(8, Math.max(0, D.front - apY)));
+    ctx.globalAlpha = worldAlpha * breath * 0.07;
+    ctx.fillRect(o0, apY + 8, o1 - o0, Math.min(10, Math.max(0, D.front - apY - 8)));
+
+    const wallGlowCol = lerpHex(palette.accent, '#ffffff', 0.1);
+    // ③ 灯罩的发光逻辑（2026-10-29 重构，作者反馈「不像正常台灯」）：
+    //    真实台灯 = 灯罩挡住向上的光，光**只从罩口往下漏**。
+    //    → 罩口（L.arm）到桌沿（D.top）之间那段墙，是被灯照到的「低处暖光」；
+    //    → 罩顶以上必须**全暗**（旧实现把光斑画在罩顶上方 = 光从罩顶射出，物理上不成立）。
+    //    形状用梯形光斑：上窄（贴罩口）下宽（散开），边缘抖动溶解。
+    const wallGlowBottom = D.top - 1;
+    // 三层：外层散光（宽、淡）→ 中层 → 内层（贴着罩口，最亮）。
+    // 底宽 = 罩口宽（0.95×罩宽），落地宽 1.55×罩宽 —— 从罩口漏下来的那束光。
+    lightTrapezoid(
+      L.x,
+      L.arm,
+      wallGlowBottom,
+      Math.round(L.shadeW * 0.95),
+      Math.round(L.shadeW * 1.55),
+      wallGlowCol,
+      worldAlpha * breath * 0.15,
+      -Infinity,
+      Infinity,
+      0.3
+    );
+    lightTrapezoid(
+      L.x,
+      L.arm,
+      wallGlowBottom,
+      Math.round(L.shadeW * 0.8),
+      Math.round(L.shadeW * 1.15),
+      wallGlowCol,
+      worldAlpha * breath * 0.2,
+      -Infinity,
+      Infinity,
+      0.3
+    );
+    lightTrapezoid(
+      L.x,
+      L.arm,
+      wallGlowBottom,
+      Math.round(L.shadeW * 0.55),
+      Math.round(L.shadeW * 0.7),
+      wallGlowCol,
+      worldAlpha * breath * 0.25,
+      -Infinity,
+      Infinity,
+      0.3
+    );
+
+    // ④ 地板光斑：灯正下方、桌沿漏到地板的一小块（2 阶，向前淡出）。
+    //    钳进桌宽：光从桌面漏下来，落在桌子正下方。
+    //    alpha 下限被 T8 的「屏色独有」判据卡住：地板基底偏蓝，暖光 alpha 落在
+    //    ~0.03–0.083 区间时混出色恰好撞进屏色（近黑蓝灰）±4 —— 所以两阶都取 ≥0.09。
+    const floorH = h - d.floorY;
+    const fh = Math.max(4, Math.round(floorH * 0.12)); // 1440：8
+    const fh1 = Math.max(2, Math.round(fh / 2));
+    const fHalf = Math.max(24, Math.round(poolR * 0.7)); // 1440：56
+    const fx0 = Math.max(D.x0, L.x - fHalf);
+    const fx1 = Math.min(D.x1, L.x + fHalf);
+    const fx0i = Math.max(D.x0, L.x - Math.round(fHalf * 0.6));
+    const fx1i = Math.min(D.x1, L.x + Math.round(fHalf * 0.6));
+    ctx.globalAlpha = worldAlpha * breath * 0.14;
+    ctx.fillRect(fx0, d.floorY, fx1 - fx0, fh1);
+    ctx.globalAlpha = worldAlpha * breath * 0.11;
+    ctx.fillRect(fx0i, d.floorY + fh1, fx1i - fx0i, Math.max(1, fh - fh1));
+
+    // ⑤ CRT 屏辉光：bezel 外缘到机身 2px 环（屏内部是 DOM 头像 SVG 的地盘，
+    //    不画——画了也会被盖住）。冷金，alpha 0.08，白昼/深夜同样在场
+    //    （室内灯不随时段——屋子是恒暗房间）。
+    const sc = c.screen;
+    crtGlowFx = { x0: sc.x - 3, y0: sc.y - 3, x1: sc.x + sc.w + 3, y1: sc.y + sc.h + 3, alpha: 0.08 };
+    ctx.fillStyle = glowCol;
+    ctx.globalAlpha = worldAlpha * 0.08;
+    ctx.fillRect(sc.x - 3, sc.y - 3, sc.w + 6, 2); // 上
+    ctx.fillRect(sc.x - 3, sc.y + sc.h + 1, sc.w + 6, 2); // 下
+    ctx.fillRect(sc.x - 3, sc.y - 1, 2, sc.h + 2); // 左
+    ctx.fillRect(sc.x + sc.w + 1, sc.y - 1, 2, sc.h + 2); // 右
+
+    // ⑥ 茶杯热气（唯一的环境动效）：杯口向上 60px 缓慢上升 + 低频 ±1px 摆，
+    //    到顶淡出循环；三列相位错开 ≥1/3 周期（不齐步走）。
+    //    reduced-motion：两列静止雾点（不飘，但在场）。
+    const S = d.steam;
+    const steamCol = lerpHex(faceLit, '#ffffff', 0.4);
+    const rise = Math.max(28, Math.round((L.base - L.head) * 0.6)); // 1440：60
+    const cols = 3;
+    const perCol = 3;
+    const span = Math.max(2, S.x1 - S.x0);
+    ctx.fillStyle = steamCol;
+    if (reduced.matches) {
+      for (const ci of [0, 2]) {
+        const cx = S.x0 + Math.round((span * ci) / 2);
+        for (let j = 0; j < perCol; j++) {
+          const yy = S.y - 6 - j * Math.round(rise / perCol);
+          ctx.globalAlpha = worldAlpha * 0.28 * (0.55 - j * 0.12);
+          ctx.fillRect(cx, yy, 1, 2);
+        }
+      }
+    } else {
+      const cyc = rise * 3.2; // 上升一个循环的帧数（1440：192 ≈ 3.2s）
+      for (let ci = 0; ci < cols; ci++) {
+        const cx = S.x0 + Math.round((span * ci) / (cols - 1));
+        const ph = ci / cols; // 相位差 = 1/3 周期
+        // 0.02 → 0.017：与两处植物（0.02）错开周期，避免全屋听同一个节拍
+        const sway = Math.round(Math.sin(t * 0.017 + ph * Math.PI * 2)); // ±1px 低频摆
+        for (let j = 0; j < perCol; j++) {
+          const u = (((ph + j / perCol + t / cyc) % 1) + 1) % 1;
+          const a = 0.28 * (1 - u) * (1 - u); // 到顶淡出
+          if (a <= 0.012) continue;
+          ctx.globalAlpha = worldAlpha * a;
+          ctx.fillRect(cx + sway, Math.round(S.y - u * rise), 1, 2);
+        }
+      }
+    }
+    steamFx = { cols, base: S.y, top: S.y - rise, frozen: reduced.matches };
+
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * 像素闪电：相邻顶点之间**逐列**铺 size×size 方块（像素语言里斜线就是楼梯），
+   * 坐标已全是整数；size=2 是核心，size=4 是同路径外圈辉光。
+   */
+  function drawBolt(pts: BoltPoint[], size: number, alpha: number): void {
+    if (pts.length === 0 || alpha <= 0) return;
+    ctx.globalAlpha = alpha;
+    const off = (size - 2) >> 1; // 4px 外圈向两侧各扩 1px，与核心同心
+    for (let k = 0; k + 1 < pts.length; k++) {
+      const a = pts[k]!;
+      const b = pts[k + 1]!;
+      const n = Math.max(1, Math.abs(b.x - a.x));
+      for (let s = 0; s <= n; s++) {
+        const x = Math.round(a.x + ((b.x - a.x) * s) / n);
+        const y = Math.round(a.y + ((b.y - a.y) * s) / n);
+        ctx.fillRect(x - off, y, size, size);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * 本帧玻璃滴的 x 范围 [minX, maxX]（无则 [-1,-1]）——e2e 拿它与 windowSpec
+   * 给的窗洞矩形对（仅 dbg 用；计算口径必须与绘制层一致）。
+   */
+  function glassBoundsNow(win: WindowSpec): [number, number] {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const g of glassStreaks) {
+      const gx = Math.round(win.x + 3 + g.rx * (win.w - 6));
+      if (gx < lo) lo = gx;
+      if (gx > hi) hi = gx;
+    }
+    for (const g of glassStreams) {
+      const gx = Math.round(win.x + 4 + g.rx * (win.w - 8));
+      if (gx < lo) lo = gx;
+      if (gx > hi) hi = gx;
+    }
+    return lo === Infinity ? [-1, -1] : [lo, hi];
+  }
+
+  function drawWorld() {
+    // 世界只住首屏 —— 且首屏现在是**窗**那一屏（ADR-0027）：以 #window 元素的可见度
+    // 为准（不依赖 scrollY 起点——首页翻页脚本会把首屏顶对齐到 0，用 scrollY
+    // 会让首屏白白损失一截 alpha）。工位（#hero 那一章）另算 deskAlpha。
+    const winEl = document.getElementById('window');
+    if (winEl) {
+      const r = winEl.getBoundingClientRect();
+      worldAlpha = clamp01(1 - Math.max(0, -r.top) / Math.max(1, r.height * 0.9));
+      // scrim 顶边 = 窗那一屏的底边（文档坐标）。CSS 里写死 `top: 100vh` 是错的：
+      // nav 是 sticky 占 60px 流，首屏因此从文档 y=60 起、翻页脚本又把首屏顶
+      // 对齐到视口 0 → scrim 会切在首屏底部上方 navH 处，在首屏底部留下一道
+      // 72% 暗玻璃的硬边（作者 2026-09-21 问「底部的灰色的框是什么」就是它）。
+      // nav 高度随断点变（桌面 60 / 窄屏 94），所以只能用实测值，不能用常数。
+      const scrimEl = document.querySelector<HTMLElement>('.bgfx-scrim.hero-vivid');
+      if (scrimEl) {
+        const bottom = Math.round(r.bottom + (window.scrollY || 0));
+        if (bottom !== scrimTopPx) {
+          scrimTopPx = bottom;
+          scrimEl.style.top = `${bottom}px`;
+        }
+      }
+    } else {
+      worldAlpha = 0;
+    }
+    // 工位（桌 / CRT / 台灯 / 茶 / 书 + 暖光）住的是**下一章** #hero：
+    // 两侧对称淡入淡出（顶对齐时满亮，进出各淡 0.9 屏）——
+    // 它跟窗不同屏，所以不能用 worldAlpha 那个「只往下淡」的公式。
+    const heroEl = document.getElementById('hero');
+    if (heroEl) {
+      const hr = heroEl.getBoundingClientRect();
+      deskAlpha = clamp01(1 - Math.abs(hr.top) / Math.max(1, hr.height * 0.5));
+      // 工位布景跟章：canvas 按 hero 顶偏移平移（Hero 接线脚本的 --scene-y 同源同值，
+      // 两套坐标锁死）。取整 = 整数像素纪律。顶对齐时 = 0，既有几何/像素断言全部不受影响。
+      heroShiftY = Math.round(hr.top);
+    } else {
+      deskAlpha = 0;
+      heroShiftY = 0;
+    }
+    const { i, t: ft } = frameBracket(alt);
+    const sky = dimSky(sampleSky(alt), fx.dim);
+    // 天体可见度：云遮日/月（没有它会出现「雨天一轮大太阳」）
+    const sunVis = sunVisibility(fx.cloud);
+    // 降水对星月的额外纱罩（2026-10-06 评审：雨夜星月 0.2 残亮仍读作「雨夜满天星」）
+    const precipK = precipSkyK(fx.rain, fx.snow);
+    const scrimCover = scrimCoverage(window.scrollY || 0, window.innerHeight, wrap.dataset.vivid === '1');
+    // 世界鼠标视差（分层深度）
+    const par = (depth: number) => Math.round(mNX * depth * 14 * (reduced.matches ? 0.5 : 1));
+
+    // 窗：景色裁进窗洞，窗洞之外是室内（2026-09-21 作者：「没有窗，哪来的窗」）
+    win = windowSpec(w, h);
+    const winOn = worldAlpha > 0.01;
+    /** 本帧的窗颤位移与窗台积水高（dbg 要报，所以提到 if 外声明） */
+    let shake = 0;
+    let sillH = 0;
+    // T5 读数每帧清零：世界不可见时不该残留上一帧的光学层读数
+    frostFx = null;
+    mistAlphaFx = 0;
+    reflectionFx = null;
+    moonSpillFx = null;
+    lampPoolFx = null;
+    crtGlowFx = null;
+    steamFx = null;
+
+    if (winOn) {
+      // 洞外铺墙（一间夜晚的房间）：基底 + 墙顶室内灯浅阶
+      drawWall();
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(win.x, win.y, win.w, win.h);
+      ctx.clip();
+      // 世界坐标原点 = 窗洞左上角：此后所有景按**洞尺寸**绘制（洞外的 win.x/y 不再出现）
+      ctx.translate(win.x, win.y);
+      // 1) 天空：两帧 crossfade（半分辨率放大 = 像素化免费）
+      ctx.globalAlpha = worldAlpha;
+      ctx.drawImage(skyFrameAt(i), 0, 0, win.w, win.h);
+      if (ft > 0.001) {
+        ctx.globalAlpha = worldAlpha * ft;
+        ctx.drawImage(skyFrameAt(i + 1), 0, 0, win.w, win.h);
+      }
+      ctx.globalAlpha = 1;
+
+      // 2) 星星 + 流星（云遮星：阴天/雨雪的星空应该基本看不见）
+      const starA = starlight * sky.star * sunVis * precipK;
+      if (starA > 0.02) {
+        const dx = par(0.15);
+        // 两级星：绝大多数 1px 弱闪，少数「亮星」带十字光芒（像素星空的层次）
+        for (const s of wStars) {
+          const tw = 0.62 + 0.38 * Math.sin(t * s.spd + s.ph);
+          ctx.fillStyle = sky.moon;
+          if (s.size === 2) {
+            ctx.globalAlpha = worldAlpha * starA * tw;
+            ctx.fillRect(Math.round(s.x) + dx - 1, Math.round(s.y), 3, 1);
+            ctx.fillRect(Math.round(s.x) + dx, Math.round(s.y) - 1, 1, 3);
+            ctx.globalAlpha = worldAlpha * starA;
+            ctx.fillRect(Math.round(s.x) + dx, Math.round(s.y), 1, 1);
+          } else {
+            ctx.globalAlpha = worldAlpha * starA * tw * 0.85;
+            ctx.fillRect(Math.round(s.x) + dx, Math.round(s.y), 1, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+      if (streak && starlight > 0.5 && sunVis > 0.4) {
+        ctx.fillStyle = sky.moon;
+        ctx.globalAlpha = worldAlpha * starlight;
+        ctx.fillRect(Math.round(streak.x), Math.round(streak.y), 3, 1);
+        ctx.globalAlpha = worldAlpha * starlight * 0.4;
+        ctx.fillRect(Math.round(streak.x - streak.vx * 2), Math.round(streak.y - streak.vy * 2), 2, 1);
+        ctx.globalAlpha = 1;
+      }
+
+      // 3) 天体（先画天体再画山 → 自然落到山后；云量大时天体被遮：sunVis）
+      // 2026-10-05 评审⑦：雾里太阳原来的「白环」= 亮盘 + additive 光晕被雾带
+      // 洗出同心差——雾天整体衰减（雾越浓太阳越只是一团更亮的雾），环就没了。
+      if (sunArcX >= 0 && sunVis > 0.02) {
+        const { x: cx, y: cy } = bodyPos(sunArcX, sunArcY);
+        const fogK = 1 - clamp01(fx.fog) * 0.62;
+        setAdditive(ctx, true);
+        // 光晕：抖动盘叠加（additive → 中心自然最亮）。外层稀疏，避免叠成靶心
+        haloDisc(cx, cy, 48, sky.sunGlow, worldAlpha * 0.1 * sunVis * fogK, 0.16);
+        haloDisc(cx, cy, 36, sky.sunGlow, worldAlpha * 0.12 * sunVis * fogK, 0.3);
+        haloDisc(cx, cy, 26, sky.sunGlow, worldAlpha * 0.14 * sunVis * fogK, 0.55);
+        haloDisc(cx, cy, 17, sky.sunGlow, worldAlpha * 0.18 * sunVis * fogK, 1);
+        setAdditive(ctx, false);
+        pixelDisc(cx, cy, 11, sky.sun, worldAlpha * sunVis * fogK);
+      }
+      if (moonArcX >= 0 && starlight > 0.05 && sunVis > 0.05) {
+        const { x: cx, y: cy } = bodyPos(moonArcX, moonArcY);
+        // 月晕：窄一档的像素圆（曾用大矩形叠十字，观感是个糊方块）
+        setAdditive(ctx, true);
+        haloDisc(cx, cy, 20, sky.moon, worldAlpha * starlight * 0.12 * sunVis * precipK, 0.22);
+        haloDisc(cx, cy, 15, sky.moon, worldAlpha * starlight * 0.16 * sunVis * precipK, 0.5);
+        setAdditive(ctx, false);
+        // 月相（阴晴圆缺）：逐行只画受光区（明暗界线与盘共弦的椭圆）——
+        // 不再永远是满盘；新月/细弦天然不可见（moonLitRow 返 null）。
+        // 旧版画完满盘再叠环形山，是「贴了一张圆纸」。
+        const ph = moonPhase(debugNow());
+        const moonA = worldAlpha * Math.max(0.35, starlight) * sunVis * precipK;
+        ctx.fillStyle = sky.moon;
+        for (let dy = -11; dy <= 11; dy++) {
+          const span = moonLitRow(dy, 11, ph);
+          if (!span) continue;
+          ctx.globalAlpha = moonA;
+          ctx.fillRect(cx + span[0], Math.round(cy + dy), span[1] - span[0], 1);
+        }
+        // 环形山：逐像素判定落在受光区内才画（亏损时环形山随盘一起隐去）
+        ctx.fillStyle = sky.moonCrater;
+        for (const [ox, oy, w2, h2] of [
+          [-4, -3, 3, 3],
+          [2, 2, 4, 4],
+        ] as const) {
+          for (let yy = 0; yy < h2; yy++) {
+            const span = moonLitRow(oy + yy, 11, ph);
+            if (!span) continue;
+            const x0 = Math.max(span[0], ox);
+            const x1 = Math.min(span[1], ox + w2);
+            if (x1 <= x0) continue;
+            ctx.globalAlpha = worldAlpha * starlight * 0.75 * sunVis * precipK;
+            ctx.fillRect(cx + x0, Math.round(cy + oy + yy), x1 - x0, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // 4) 云（两层深度）
+      // 云色随云量变：疏云是亮白的，阴/雨/雪的云是厚重灰暗的
+      // （只用 dimSky 压暗不够：白 × 0.72 仍是亮白，而真实雨云本来就发灰）
+      const thick = clamp01((fx.cloud - 0.4) / 0.6);
+      // 2026-10-06 评审（③二轮）：夜云体色≈天空色会整体隐没，只剩月色顶边
+      // 读作「漂浮的短线」——夜里把云体压成比天空暗一档的**剪影**（向黑收
+      // 0.4·nightK），顶边微光落在可见的暗体上才成立；白天恒等于原色。
+      const nightK = 1 - clamp01(daylight);
+      const sil = (hex: string) => lerpHex(hex, '#000000', nightK * 0.4);
+      const cloudHiCol = sil(lerpHex(sky.cloudHi, sky.bands[2]!, thick * 0.85));
+      // 白天云底再压一档（2026-10-30 白天美术）：三档明暗在夜里的暗剪影上够用，
+      // 白天三档都挤在浅灰里，云读作「几块灰纸」。底档向黑收 16%·dayK 才出体积。
+      const cloudLoCol = lerpHex(
+        sil(lerpHex(sky.cloudLo, sky.bands[0]!, thick * 0.8)),
+        '#000000',
+        clamp01(daylight) * 0.16
+      );
+      const cloudMidCol = lerpHex(cloudHiCol, cloudLoCol, 0.45); // 中排：介于受光/受影
+      // 2026-10-05 评审③：夜云整体再沉一档——夜里乘 (1−0.25·nightK)（剪影已
+      // 承担可见度，这层只做轻收），白天这条恒为 1（零影响）。
+      const cdx = par(0.6);
+      for (const c of clouds) {
+        const dx = cdx * (c.depth ? 1 : 0.5);
+        // 形状逐帧变形（整数伸缩）+ 上下起伏：云不是贴纸，是在缓慢鼓起与消散
+        const blocks = morphCloud(c, t);
+        const dy = cloudBob(t, c.bobPh, c.bobAmp);
+        // 三档明暗按「块底在云高中的位置」取色：低处受影、顶部受光——
+        // 两档（只有底座暗/其余亮）时代云读作两块色纸，三档才有体积
+        ctx.globalAlpha = worldAlpha * (0.85 - thick * 0.1) * (1 - nightK * 0.25);
+        let topY = Infinity;
+        let topRow: [number, number, number] | null = null;
+        for (const [bx, by, bw, bh] of blocks) {
+          const bf = (by + bh) / Math.max(1, c.h);
+          ctx.fillStyle = bf > 0.66 ? cloudLoCol : bf > 0.42 ? cloudMidCol : cloudHiCol;
+          ctx.fillRect(Math.round(c.x + bx + dx), Math.round(c.y + by + dy), bw, bh);
+          if (by < topY) {
+            topY = by;
+            topRow = [bx, by, bw];
+          }
+        }
+        // 月光顶边：夜里云顶 1px 月色微光，云才「浮在夜里」而不是悬空黑板；
+        // sunVis 一票否决阴天（月亮本来就被云遮死了），白天 nightK=0 不画
+        if (topRow && nightK > 0 && starlight > 0.3 && sunVis > 0.05) {
+          ctx.fillStyle = sky.moon;
+          ctx.globalAlpha = worldAlpha * 0.13 * starlight * sunVis * nightK;
+          ctx.fillRect(
+            Math.round(c.x + topRow[0] + dx),
+            Math.round(c.y + topRow[1] + dy),
+            topRow[2],
+            1
+          );
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // 5) 山与湖面（随天空帧变色调，crossfade）；帧比洞宽（LAND_MARGIN 视差余量）
+      const sdx = par(0.28);
+      const landW = win.w + LAND_MARGIN * 2;
+      ctx.globalAlpha = worldAlpha;
+      ctx.drawImage(landFrameAt(i, fx.snow), -LAND_MARGIN + sdx, 0, landW, win.h);
+      if (ft > 0.001) {
+        ctx.globalAlpha = worldAlpha * ft;
+        ctx.drawImage(landFrameAt(i + 1, fx.snow), -LAND_MARGIN + sdx, 0, landW, win.h);
+      }
+      // 5b) 山影倒影：从缓存帧逐行镜像取样 + 随波扭曲的柔化（见 REFLECT）
+      if (scenery) drawReflection(i, ft, sdx, win.h);
+      ctx.globalAlpha = 1;
+
+      // 6) 湖面波光（天体光柱带内的闪烁亮点）+ 雨落涟漪
+      if (scenery) {
+        const pillarX =
+          sunArcX >= 0
+            ? win.w * 0.12 + sunArcX * win.w * 0.76
+            : moonArcX >= 0
+              ? win.w * 0.12 + moonArcX * win.w * 0.76
+              : -1;
+        if (pillarX >= 0) {
+          const glowCol = sunArcX >= 0 ? sky.sunGlow : sky.moon;
+          const base = Math.max(0.35, Math.max(daylight, starlight)) * sunVis * precipK;
+          ctx.fillStyle = glowCol;
+          for (const sp of sparkles) {
+            const b = Math.sin(t * sp.spd + sp.ph);
+            if (b < 0.62) continue;
+            ctx.globalAlpha = worldAlpha * base * (b - 0.62) * 3.2;
+            ctx.fillRect(Math.round(pillarX + sp.ox) + sdx, Math.round(sp.y), 5, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
+        // 涟漪：横向像素短线向外扩散（雨落在湖面上）
+        if (ripples.length > 0) {
+          ctx.fillStyle = sky.moon;
+          for (const rp of ripples) {
+            const d = rp.age / RIPPLE_LIFE;
+            const halfW = Math.round(2 + d * 10);
+            ctx.globalAlpha = worldAlpha * (1 - d) * 0.42;
+            ctx.fillRect(Math.round(rp.x - halfW) + sdx, Math.round(rp.y), halfW * 2, 1);
+            ctx.globalAlpha = worldAlpha * (1 - d) * 0.22;
+            ctx.fillRect(Math.round(rp.x - halfW * 0.5) + sdx, Math.round(rp.y) - 2, halfW, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // 7) 渔舟：中景锚点（游移 + 随波起伏；入夜点船灯 + 水面光柱倒影）
+      if (scenery) {
+        const { x: bx, y: by } = boatPose(t, win.w, scenery.horizonY, win.h);
+        const hullCol = lerpHex(sky.ridgeNear, '#000000', 0.42);
+        const sailCol = lerpHex(sky.ridgeNear, sky.bands[5]!, 0.55);
+        // 船体：梯形舱（3 行，底宽 12 → 顶宽 8）+ 桅杆 + 小帆
+        ctx.fillStyle = hullCol;
+        ctx.fillRect(bx - 6, by, 12, 2);
+        ctx.fillRect(bx - 4, by - 1, 8, 1);
+        ctx.fillRect(bx, by - 5, 1, 4);
+        ctx.fillStyle = sailCol;
+        ctx.fillRect(bx + 1, by - 4, 3, 3);
+        // 船影：随波错位的暗斑（与山影同一套扭曲语言）
+        const smear = reflectShear(by + 6, t, 1.3, 0.5);
+        ctx.fillStyle = hullCol;
+        ctx.globalAlpha = worldAlpha * 0.22;
+        ctx.fillRect(bx - 5 + smear, by + 3, 10, 2);
+        ctx.globalAlpha = 1;
+        // 船灯：入夜点亮（暖光与窗灯同源），水面拖一道光柱倒影。
+        // 2026-10-05 评审⑦：倒影拆三段、各段独立随波错位（与船影/山影同一套
+        // reflectShear 语言）——笔直一根杆读作插在水里的尺，不是倒影。
+        if (starlight >= BOAT.LAMP_STAR && sunVis > 0.05) {
+          ctx.fillStyle = sky.windowLit;
+          ctx.globalAlpha = worldAlpha * Math.min(1, starlight * 1.6) * 0.9;
+          ctx.fillRect(bx - 3, by - 2, 2, 1);
+          ctx.globalAlpha = worldAlpha * Math.min(1, starlight * 1.2) * 0.3;
+          for (const [oy, segH] of [
+            [3, 3],
+            [8, 2],
+            [11, 2],
+          ] as const) {
+            const seg = reflectShear(by + oy, t, 1.3, 0.5);
+            ctx.fillRect(bx - 3 + seg, by + oy, 2, segH);
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // 8) 飞鸟小队：人字 3–5 只，扑翼两态（V 字/放平）
+      if (flock) {
+        ctx.fillStyle = lerpHex(sky.bands[2]!, '#000000', 0.45);
+        ctx.globalAlpha = worldAlpha * 0.8;
+        for (let k = 0; k < flock.n; k++) {
+          // 人字：领头在前，两翼向后错开（奇数只左右对称，偶数只偏一侧）
+          const row = Math.ceil(k / 2);
+          const side = k === 0 ? 0 : k % 2 === 1 ? -1 : 1;
+          const bx = flock.x - row * 9;
+          const by = flock.y + row * 4 * (side === 0 ? 0 : side);
+          const up = birdWingUp(t + k * 5);
+          // 鸟身：1×2 + 两片 2×1 的翼（扑翼时翼尖上抬 1px）
+          ctx.fillRect(Math.round(bx), Math.round(by), 2, 1);
+          ctx.fillRect(Math.round(bx) - 2, Math.round(by) - (up ? 1 : 0), 2, 1);
+          ctx.fillRect(Math.round(bx) + 2, Math.round(by) - (up ? 1 : 0), 2, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // 9) 前景芦苇（近景视差最大，随风轻摆）
+      if (scenery) drawReeds(par(0.8), sky);
+
+      // 8) 雾带（山脚漫上来的水平带，缓慢漂移）
+      if (fx.fog > 0) {
+        const drift = Math.sin(t * 0.008) * 40;
+        const hy = scenery?.horizonY ?? win.h * 0.68;
+        ctx.fillStyle = sky.cloudHi;
+        ctx.globalAlpha = worldAlpha * fx.fog * 0.16;
+        ctx.fillRect(-80 + drift, Math.round(hy - win.h * 0.11), win.w + 160, Math.round(win.h * 0.06));
+        ctx.globalAlpha = worldAlpha * fx.fog * 0.11;
+        ctx.fillRect(-80 - drift, Math.round(win.h * 0.62), win.w + 160, 46);
+        ctx.globalAlpha = 1;
+      }
+
+      // 10) 玻璃物性（T5）：冷罩 → 结露霜线 → 暴雨起雾。
+      // 都在世界裁剪内、雾带之后，画在玻璃滑痕/水股之下——「隔着玻璃」的底层；
+      // 框与洞深阶梯随后（drawWindowFrame）画在其上，所以玻璃物性只活在玻璃可见区。
+      const depth = win.revealSteps.reduce((a, b) => a + b, 0);
+      const gx0 = depth + 1; // 玻璃可见区左上（depth 处是 lip，玻璃首行 = depth+1）
+      const gy0 = depth + 1;
+      const gx1 = win.w - depth - 2; // 右/下开区间
+      const gy1 = win.h - 1;
+
+      // 10a) 玻璃冷罩：取窗外天空的冷带色，极淡铺一层（普通 source-over）
+      const tint = glassTint(sky.bands[0]!);
+      glassTintFx = tint;
+      ctx.fillStyle = tint.color;
+      ctx.globalAlpha = worldAlpha * tint.alpha;
+      ctx.fillRect(0, 0, win.w, win.h);
+      ctx.globalAlpha = 1;
+
+      // 10b) 结露：晴夜冷透时沿玻璃可见区上/左/右内缘画 1px 亮霜线
+      // （下缘留给窗台，不画）；cornerBoost 时四角各加 3×3 亮块。
+      frostFx = frost(starlight, fx.rain);
+      if (frostFx) {
+        const frostCol = lerpHex(sky.moon, '#ffffff', 0.4);
+        ctx.fillStyle = frostCol;
+        ctx.globalAlpha = worldAlpha * 0.35;
+        ctx.fillRect(gx0, gy0, gx1 - gx0, 1); // 上缘
+        ctx.fillRect(gx0, gy0, 1, gy1 - gy0); // 左缘
+        ctx.fillRect(gx1 - 1, gy0, 1, gy1 - gy0); // 右缘
+        if (frostFx.cornerBoost) {
+          ctx.fillRect(gx0, gy0, 3, 3);
+          ctx.fillRect(gx1 - 3, gy0, 3, 3);
+          ctx.fillRect(gx0, gy1 - 3, 3, 3);
+          ctx.fillRect(gx1 - 3, gy1 - 3, 3, 3);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // 10c) 暴雨起雾：雨强 ≥0.85 时整洞叠一层发白的雾（亮带提亮 → 雨雾是白茫的）。
+      // 画在滑痕/水股之下 → 水股把雾「划开」，读得出一层湿玻璃。
+      mistAlphaFx = mistGlass(fx.rain);
+      if (mistAlphaFx > 0) {
+        ctx.fillStyle = lerpHex(sky.bands[5]!, '#ffffff', 0.5);
+        ctx.globalAlpha = worldAlpha * mistAlphaFx;
+        ctx.fillRect(0, 0, win.w, win.h);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+      // 风拍窗：风大到 0.5 以上时，每 3.5s 窗框横向颤 1–2px（整数）。
+      // 玻璃滴不动（1–2px 差可忽略）。reduced-motion 下不颤。
+      shake = !reduced.matches && fx.wind >= 0.5 ? windowShake(frame, fx.wind) : 0;
+      ctx.save();
+      ctx.translate(shake, 0);
+      drawWindowFrame(sky, win, daylight);
+      // 窗台陈设（T6）：小盆栽坐左端台面，随窗颤一起动（在同一 translate 块内）；
+      // 色从框面实色（接光后的 face）派生——见 drawSillPlant 注释
+      drawSillPlant(win, t, sunlitFrame(palette, daylight).face);
+      ctx.restore();
+      // 月光透窗（T5）：夜里月亮在弧上时，月光穿过窗洞在室内侧投两段斜亮带——
+      // 窗台台面一段（强）+ 台体之下墙面一段（弱，alphaLow）。画在框之后（光落在
+      // 室内表面）；白天 / 月光不可见时 moonSpill 返 null，恒不画。
+      moonSpillFx = null;
+      if (moonArcX >= 0) {
+        const body = bodyPos(moonArcX, moonArcY);
+        const spill = moonSpill(win, win.x + body.x, starlight);
+        if (spill) {
+          moonSpillFx = spill;
+          ctx.fillStyle = sky.moon; // 与月盘同源色：光来自那轮月
+          ctx.globalAlpha = worldAlpha * spill.alphaTop;
+          ctx.fillRect(spill.x0, win.y + win.h + 1, spill.x1 - spill.x0, 4);
+          // 第二段画在台面/台体上（2026-10-06 评审：旧 y=+sill+8 落在视口底缘
+          // 之外，画了看不见）——月光越过台沿继续照亮台体前脸
+          ctx.globalAlpha = worldAlpha * spill.alphaLow;
+          ctx.fillRect(spill.x0, win.y + win.h + 9, spill.x1 - spill.x0, 10);
+          ctx.globalAlpha = 1;
+        }
+      }
+      // 窗台积水（室内侧，不在窗洞裁剪内）：暴雨时窗台积起一道水 + 随 t 漂移的亮斑。
+      // 真窗化后窗台只占窗体宽（框外缘到框外缘），水不能漫到墙上。
+      sillH = sillWaterHeight(fx.rain);
+      if (sillH > 0) {
+        const sillY = win.y + win.h + 1;
+        const sx0 = win.x - win.frame;
+        const sw = win.w + win.frame * 2;
+        ctx.fillStyle = '#a8cde2';
+        ctx.globalAlpha = worldAlpha * 0.4;
+        ctx.fillRect(sx0, sillY, sw, sillH);
+        ctx.fillStyle = '#d6ecf6';
+        ctx.globalAlpha = worldAlpha * 0.35;
+        const sx = sx0 + ((t * 0.4) % sw);
+        ctx.fillRect(Math.round(sx), sillY, 6, 2);
+        ctx.fillRect(Math.round(sx0 + ((sx - sx0 + sw * 0.5) % sw)), sillY, 6, 2);
+        ctx.globalAlpha = 1;
+      }
+      // 工位静物（T8/T10）：桌 / CRT 壳 / 台灯 / 茶 / 书 —— **住下一章 #hero**，
+      // 与窗/景不同屏（ADR-0027），所以不在这段里画：见下面 deskOn 段。
+    }
+
+    // 8b) 工位 + 暖光系统：只住 #hero 那一章（工位自成一景，窗外世界在上一屏）。
+    //     drawDeskRoom / drawWarmLight 内部读的是 worldAlpha，这里临时换成 deskAlpha
+    //     —— 换门比给两百行绘制代码改参数名安全（两扇门的语义各自注释在 drawWorld 头）。
+    if (deskAlpha > 0.01) {
+      const gate = worldAlpha;
+      worldAlpha = deskAlpha;
+      // 工位是 #hero 这一章的布景：整体按 hero 顶偏移平移（跟章节一起滚）。
+      // 不平移的话，滚动中途 DOM（铭牌/卡带/头像）在滚、房间钉死在视口上，
+      // 一屏画就散架（作者 2026-10-01 截图实锤）。dbg 读数（灯池/屏辉/热气）
+      // 仍是 deskSpec 坐标系（顶对齐 = 视口坐标），e2e 全部在顶对齐态采样，不受影响。
+      ctx.save();
+      ctx.translate(0, heroShiftY);
+      drawDeskRoom(sky, win, t);
+      // 暖光系统（T9）：台灯灯池 + CRT 屏辉光 + 茶杯热气。画在静物之后（光落在物件上）。
+      drawWarmLight(sky, win, t);
+      ctx.restore();
+      worldAlpha = gate;
+    }
+
+    // 8) 天气粒子（全站飘落；scrim 区亮度补偿 = 隐约但可见）——外面在下雨，
+    // 所以粒子也要被窗框挡（画在框之前 + 裁进窗洞）；滚离首屏后窗不在了，就不再裁
+    if (winOn) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(win.x, win.y, win.w, win.h);
+      ctx.clip();
+    }
+    if (rainDrops.length > 0) {
+      const boost = Math.min(0.9, 1 + scrimCover * 1.8);
+      // 雨丝颜色随昼夜：白天比天空暗（看得见），夜晚比天空亮（被灯照亮）
+      // 夜雨不能太亮：曾用 #e8f2fa@0.72，雨丝成了全屏最亮的像素（比月亮还亮，视觉上直跳）
+      const dayRain = daylight > 0.4;
+      const farCol = dayRain ? '#8fa8bd' : '#8ea4b8';
+      const nearCol = dayRain ? '#c2d8e8' : '#c8d8e6';
+      for (const d of rainDrops) {
+        const a = (d.depth ? 0.66 : 0.4) * boost;
+        ctx.fillStyle = d.depth ? nearCol : farCol;
+        ctx.globalAlpha = a;
+        ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, Math.round(d.len));
+        if (d.depth) {
+          ctx.globalAlpha = Math.min(0.95, a + 0.22);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(Math.round(d.x), Math.round(d.y - 2), 1, 2);
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#cfe4f2';
+      for (const sp of splashes) {
+        ctx.globalAlpha = 0.5 * (1 - sp.age / 5);
+        ctx.fillRect(Math.round(sp.x) - 1, Math.round(sp.y), 3, 1);
+      }
+      ctx.globalAlpha = 1;
+    }
+    // 8b) 玻璃上的雨（滑痕 + 暴雨沿窗的水股）：雨贴在**玻璃**上（裁在窗洞内），
+    // 与穿过画面的雨粒子是两层——「我隔着一块湿玻璃看外面」
+    if (winOn && (glassStreaks.length > 0 || glassStreams.length > 0)) {
+      const dayRain = daylight > 0.4;
+      for (const g of glassStreaks) {
+        const gx = Math.round(win.x + 3 + g.rx * (win.w - 6));
+        const gy = Math.round(win.y + g.y * win.h);
+        ctx.fillStyle = dayRain ? '#e4eef6' : '#dce8f2';
+        ctx.globalAlpha = worldAlpha * 0.3;
+        ctx.fillRect(gx, gy - 10, 1, 10); // 滑痕
+        ctx.globalAlpha = worldAlpha * 0.85;
+        ctx.fillRect(gx, gy, 1, 2); // 亮头水珠
+      }
+      for (const g of glassStreams) {
+        const gx = Math.round(win.x + 4 + g.rx * (win.w - 8));
+        const gy = Math.round(win.y + g.y * win.h);
+        const top = Math.max(win.y, gy - Math.round(win.h * 0.5));
+        // 2026-10-05 评审⑦：全亮水股在暗画面上读作一道竖划痕——整段降一档亮度
+        ctx.fillStyle = '#cfe0ec';
+        ctx.globalAlpha = worldAlpha * 0.28;
+        ctx.fillRect(gx, top, 2, gy - top); // 半透明水股（长 0.5 窗高）
+        ctx.fillStyle = '#eaf3fa';
+        ctx.globalAlpha = worldAlpha * 0.63;
+        ctx.fillRect(gx, gy, 2, 3); // 流头
+      }
+      ctx.globalAlpha = 1;
+    }
+    // 8c) 室内暖光在玻璃上的反光斑（T5）：夜里身后那盏灯的幽灵倒影，
+    // 低频双正弦漂移（位置/尺寸/alpha 全由 indoorReflection 出，不写死）。
+    // 画在滑痕/水股之上：倒影在玻璃体内，水珠在玻璃表面，后者该盖住前者。
+    // 2026-10-05 评审①：硬边实心矩形悬在画面正中读作 UI 残片——改三层软边
+    // （reflectionLayers 同源出几何）+ 纵向灯柱形状 + 只在深夜亮（starlight≥0.7）。
+    // 2026-10-06 二轮：锚位从 0.42h 下移到 0.64h——灯在观察者身后偏下，倒影
+    // 落在玻璃下段，与夜暖晕同构（「屋里的暖从底下上来」），不再悬在天空正中。
+    reflectionFx = null;
+    if (winOn) {
+      const r = indoorReflection(t, starlight, palette);
+      if (r) {
+        const cx = win.x + Math.round(win.w * 0.5) + r.x;
+        const cy = win.y + Math.round(win.h * 0.64) + r.y;
+        const core = {
+          x: cx - (r.w >> 1),
+          y: cy - (r.h >> 1),
+          w: r.w,
+          h: r.h,
+          alpha: r.alpha,
+        };
+        reflectionFx = { x: core.x, y: core.y, w: core.w, h: core.h, alpha: r.alpha };
+        ctx.fillStyle = r.color;
+        for (const L of reflectionLayers(core)) {
+          ctx.globalAlpha = worldAlpha * L.alpha;
+          ctx.fillRect(L.x, L.y, L.w, L.h);
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+    if (flakes.length > 0) {
+      const boost = Math.min(0.9, 1 + scrimCover * 1.6);
+      for (const f of flakes) {
+        ctx.globalAlpha = (f.depth ? 0.9 : 0.55) * boost;
+        ctx.fillStyle = '#f2f7fc';
+        ctx.fillRect(Math.round(f.x), Math.round(f.y), f.size, f.size);
+        // 近层大颗：加一横一竖变成十字雪花（1px 点在深色天空里太不起眼）
+        if (f.size >= 2) {
+          ctx.fillRect(Math.round(f.x) - 1, Math.round(f.y) + 1, f.size + 2, 1);
+          ctx.fillRect(Math.round(f.x) + 1, Math.round(f.y) - 1, 1, f.size + 2);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (winOn) ctx.restore();
+
+    // 9) 雷闪罩（reduced-motion 不调度，见 stepWorld）；闪电折线压在闪罩**之上**。
+    // 2026-09-23 作者反馈「不要太闪、对眼睛不友好」：全屏纯白瞬罩像相机闪光灯 →
+    // 改**暖白渐变罩**（云层透光感：天顶最亮、地平线 38%、水面只余 20% 反光）+
+    // 平方缓出（前快后慢的软尾）。总窗长 9 帧不变，≤3 闪/s 合规口径不动。
+    if (flashT > 0) {
+      // 地平线是洞坐标量，闪罩是屏幕层：换算回屏幕 y（天顶亮、水面弱）
+      const top = Math.ceil(win.y + (scenery?.horizonY ?? win.h * 0.68));
+      const p = flashT / 9;
+      const a0 = 0.5 * flashPeak * p * p;
+      const g0 = ctx.createLinearGradient(0, 0, 0, top);
+      g0.addColorStop(0, `rgba(255,243,220,${a0.toFixed(3)})`);
+      g0.addColorStop(1, `rgba(255,243,220,${(a0 * 0.38).toFixed(3)})`);
+      ctx.fillStyle = g0;
+      ctx.fillRect(0, 0, w, top);
+      const g1 = ctx.createLinearGradient(0, top, 0, h);
+      g1.addColorStop(0, `rgba(255,243,220,${(a0 * 0.2).toFixed(3)})`);
+      g1.addColorStop(1, 'rgba(255,243,220,0)');
+      ctx.fillStyle = g1;
+      ctx.fillRect(0, top, w, h - top);
+      ctx.globalAlpha = 1;
+      if (boltPts) {
+        ctx.fillStyle = '#f2f6ff';
+        drawBolt(boltPts, 4, worldAlpha * 0.3); // 外圈辉光
+        drawBolt(boltPts, 2, worldAlpha); // 核心（2×2 像素阶梯）
+      }
+    }
+
+    // 调试钩子（e2e / 验收用）
+    ;(window as unknown as { __bgfxDebug?: Record<string, unknown> }).__bgfxDebug = {
+      mode,
+      alt: Math.round(alt * 1000) / 1000,
+      daylight: Math.round(daylight * 100) / 100,
+      starlight: Math.round(starlight * 100) / 100,
+      worldAlpha: Math.round(worldAlpha * 100) / 100,
+      // 工位那一章（#hero）的 alpha 门：与窗/景的 worldAlpha 是两扇独立的门（ADR-0027）
+      deskAlpha: Math.round(deskAlpha * 100) / 100,
+      weather: fx.kind,
+      // 调试台读数：生效天气（含覆写）+ 当前时间旅行偏移（ms）
+      wxDebug: debugWeatherKind(liveKind),
+      clockOffsetMs: clockOffsetMs(),
+      rain: rainDrops.length,
+      snow: flakes.length,
+      ripples: ripples.length,
+      flock: flock ? flock.n : 0,
+      flockX: flock ? Math.round(flock.x) : -1,
+      bootP: Math.round(bootP * 100) / 100,
+      wind: fx.wind,
+      glassStreaks: glassStreaks.length,
+      glassStreams: glassStreams.length,
+      sillWater: sillH,
+      // T5 玻璃物性/光交换读数（e2e 辅助判据；主判据仍落像素）
+      glassTint: glassTintFx,
+      frost: frostFx,
+      mistAlpha: mistAlphaFx,
+      reflection: reflectionFx,
+      moonSpill: moonSpillFx,
+      // T9 暖光系统读数（e2e 辅助判据；主判据仍落像素）
+      lampPool: lampPoolFx,
+      crtGlow: crtGlowFx,
+      steam: steamFx,
+      wallLitTop: wallLitTopFx,
+      shake,
+      bolt: boltPts ? boltPts.length : 0,
+      glassBounds: glassBoundsNow(win),
+      // 测试钩子（e2e 用）：手动触发一次雷（与自动调度同一套：flashT=9 + 折线）。
+      // 不加 reduced-motion 门控——自动路径的门控只该待在调度处（stepWorld）。
+      flash: () => {
+        flashT = 9;
+        flashPeak = 1;
+        boltPts = genBolt(win.w, scenery?.horizonY ?? win.h * 0.68, Math.random).map((p) => ({
+          x: p.x + win.x,
+          y: p.y + win.y,
+        }));
+      },
+    };
+  }
+
+  // ==================== core：绘制 ====================
+  let palette: Palette;
+  let additive = false;
+  let styles: ReturnType<typeof buildStyles>;
+
+  function buildStyles(p: Palette) {
+    const { accent, light, bg } = p;
+    const k = lightThemeLineFactor(relativeLuminance(bg) * 255);
+    const rgba = (hex: string, a: number) => hexToRgba(hex, a * k);
+    return {
+      pulseRing: rgba(accent, 0.65),
+      mDim: rgba(light, 0.5),
+      mDimPin: rgba(light, 0.68),
+      mLit: rgba(accent, 0.92),
+      mLitGlow: rgba(accent, 0.5),
+      mChipFill: rgba(light, 0.07),
+      mAccent: hexToRgba(accent, 1),
+      mWhite: hexToRgba(light, 1),
+    };
+  }
+
   const host: FxRuntimeHost = {
     getSize: () => {
       const r = wrap.getBoundingClientRect();
       return { width: r.width, height: r.height };
     },
-    // 固定背景层恒在视口：不再需要 IntersectionObserver 门控
     shouldRun: () => true,
     frame: () => {
-      // 模式同步：dock 写 bgfxPref → 我们读最新值并比对当前 mode
       const live = normalize(bgfxPref.get());
       if (live !== mode) {
         mode = live;
@@ -148,886 +2580,62 @@ const { heroVivid = false } = Astro.props;
       }
       if (frame % cadence === 0) {
         t += 1;
-        step();
+        if (mode === 'world') stepWorld();
       }
+      // 环境音（ambience）：每秒级同步一次——切 off 淡出，雨天进世界有声；
+      // 放在 frame 层而非 stepWorld，是因为静音偏好变化也要被周期性重查。
+      if (frame % 60 === 0) updateAmbient(mode === 'world' ? fx : null);
       draw();
       frame += 1;
     },
     onTheme: (p, a) => {
       palette = p;
       additive = a;
-      styles = buildStyles();
-      // 磷光再调谐：主题切换瞬间短促增亮（0.4s），steps 衰减回地板
-      retuneT = 24;
+      styles = buildStyles(p);
     },
     onResize: ({ width, height }) => {
       w = width;
       h = height;
-      seed();
+      // 洞几何随视口变：先重建，再按洞尺寸播种世界（天空/山湖帧缓存里也是洞尺寸）
+      win = windowSpec(w, h);
+      // 只播种世界（core 机器的一半已随模式退役：genMachine/section 重组/走线全删）
+      seedWorld();
     },
   };
   const rt = createFxRuntime(canvas, host);
-  let palette: Palette = rt.palette;
-  let styles = buildStyles();
-  let additive = rt.additive;
-
-  /** 每模式预生成样式串（避免逐帧拼字符串） */
-  function buildStyles() {
-    const { accent, light, bg } = palette;
-    return {
-      starHalo: hexToRgba(accent, 0.22),
-      starCore: hexToRgba(accent, 0.9),
-      starBack: hexToRgba(light, 0.32),
-      streak: hexToRgba(light, 0.85),
-      streakTail: hexToRgba(accent, 0.35),
-      scanHalo: hexToRgba(accent, 0.14),
-      scanBand: hexToRgba(accent, 0.18),
-      scanLead: hexToRgba(light, 0.6),
-      rainHead: hexToRgba(light, 0.9),
-      rainBody: hexToRgba(accent, 0.55),
-      rainBodyB: hexToRgba(light, 0.4),
-      waveCore: hexToRgba(light, 0.85),
-      waveHalo: hexToRgba(accent, 0.16),
-      waveMirror: hexToRgba(accent, 0.2),
-      gridLine: hexToRgba(accent, 0.42),
-      gridLineDim: hexToRgba(accent, 0.14),
-      gridHorizon: hexToRgba(light, 0.5),
-      gridGlow: hexToRgba(accent, 0.1),
-      pulseRing: hexToRgba(accent, 0.65),
-      pulseSweep: hexToRgba(accent, 0.5),
-      // 机箱（core）——可见性评审（2026-08-31 可见性评审）：暗态稳态 alpha 提到 ~0.36（原 0.12 低于人眼阈值）
-      mDim: hexToRgba(light, 0.5),
-      mDimPin: hexToRgba(light, 0.68),
-      mLit: hexToRgba(accent, 0.92),
-      mLitGlow: hexToRgba(accent, 0.5),
-      mChipFill: hexToRgba(light, 0.07),
-      // 双芯辉光：alpha 全由 coreGlow() 给（可测、单源），故色槽取全 alpha 避免二次相乘
-      mAccent: hexToRgba(accent, 1),
-      mWhite: hexToRgba(light, 1),
-    };
-  }
-
-  function normalize(v: string | null): Mode {
-    return v && (MODES as readonly string[]).includes(v) ? (v as Mode) : DEFAULT_MODE;
-  }
-
-  // ---- 粒子数据 ----
-  interface Star {
-    x: number;
-    y: number;
-    size: number;
-    spd: number;
-    ph: number;
-    tier: 0 | 1;
-    /** 视差深度：0 = 远景（贴视口）、1 = 近景（随滚动以 22% 页速漂移） */
-    depth: number;
-  }
-  interface Streak {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    life: number;
-  }
-  interface Band {
-    y: number;
-    spd: number;
-    ph: number;
-  }
-  interface Drop {
-    x: number;
-    y: number;
-    spd: number;
-    len: number;
-    kind: 0 | 1;
-  }
-  interface Pulse {
-    kind: 'ring' | 'sweep' | 'spark';
-    x: number;
-    y: number;
-    t0: number;
-  }
-
-  let stars: Star[] = [];
-  let streak: Streak | null = null;
-  let bands: Band[] = [];
-  let rain: Drop[] = [];
-  const pulses: Pulse[] = [];
-
-  // ==================== 机箱内部（core：机器叙事默认底） ====================
-  interface Chip {
-    x: number;
-    y: number;
-  }
-  interface Pkt {
-    tr: number; // 所在走线索引
-    u: number; // 累计进度 0..1
-    spd: number; // 每帧推进（帧速 = 1/(1.2-2s)）
-    dir: 1 | -1; // 出（依芯片向外）/ 回（向芯片汇聚/确认）
-  }
-  let chips: MachineChip[] = [];
-  let traces: MachineTrace[] = [];
-  let traceLit: number[][] = []; // 每 trace 每段磷光余辉 0..1
-  let pkts: Pkt[] = [];
-  let dustP: { x: number; y: number; vx: number; vy: number; ph: number } | null = null;
-  /**
-   * 信号包亮度：同时用于「行进时点亮所在段」（stepCore）与「本体双芯辉光」（drawCore）。
-   * 两处必须同源 —— 否则本体与它点亮的轨迹会亮得不一样。0.92 > GLOW.whiteGate(0.85)
-   * 是常态电流能出白热芯的唯一理由（开机仪式 boost 峰值 0.7 不够格，故不整板白热）。
-   */
-  const PACKET_LIT = 0.92;
-  let pktAt = 60; // 首包较快（开机仪式后即来）
-  let dustAt = 60 * 18; // 尘埃很罕见
-  let bootCascade = -1; // 开机仪式级联（-1 = 未播）；帧计数剩余
-  let cheatT = 0; // Konami「系统全开」/进度帧
-  let retuneT = 0; // 主题再调谐（帧）
-  let flashAt: { x: number; y: number; age: number } | null = null; // click reticle
-  let px = -1;
-  let py = -1; // 指针（近场照明）
-
-  // ---- section 重组（ADR-0004）：基础几何态 + 错峰 snap tween + 2D 相机 ----
-  let sectionNow: SectionId = 'hero';
-  let tweenFromChips: MachineChip[] = [];
-  let tweenFromTraces: MachineTrace[] = [];
-  let tweenToChips: MachineChip[] = [];
-  let tweenToTraces: MachineTrace[] = [];
-  let tweenStart = -1; // 启动帧；-1 = 未重组
-  let tweening = false;
-  const TWEEN_DUR = 32; // 每元素 morph 时长（帧）
-  const TWEEN_STAGGER = 3; // 错峰：每元素延迟（帧）—— overlapping action
-  // 2D 相机（连续推拉 + 鼠标视差）
-  let camScale = 1;
-  let camOX = 0;
-  let camOY = 0;
-  let scrollProg = 0; // 0..1 全页滚动进度
-  let mNX = 0; // 鼠标归一化 x（-1..1，中心 0）
-  let mNY = 0;
-
-  const momentGate = createMomentGate(60_000); // 全局时刻预算闸：≤1 次/60s
-  let lastMomentMs = performance.now(); // 页内时刻基线（布尔串空闲期）
-  const BOOT_DUR = 150; // 开机仪式时长（帧 ≈ 2.5s deliberate：首访 wow，不走 LCP 被吞）
-
-  function seed() {
-    const keep = sectionNow;
-    genMachine();
-    if (keep !== 'hero') setSection(keep); // 尺寸变化后保持在当前 section 基础态
-    const n = starCount(w * h);
-    stars = Array.from({ length: n }, () => ({
-      x: Math.random() * w,
-      y: Math.random() * h,
-      size: Math.random() < 0.35 ? 2 : 3,
-      spd: 0.15 + Math.random() * 0.55,
-      ph: Math.random() * Math.PI * 2,
-      tier: Math.random() < 0.35 ? 0 : 1,
-      depth: Math.random(),
-    }));
-    streak = null;
-
-    bands = Array.from({ length: 3 }, (_, i) => ({
-      y: (h / 3) * i + Math.random() * h,
-      spd: 0.3 + Math.random() * 0.6,
-      ph: Math.random() * Math.PI * 2,
-    }));
-
-    const cols = rainColumns(w);
-    const colW = w / cols;
-    const [lenLo, lenHi] = rainLengthRange();
-    rain = [];
-    for (let c = 0; c < cols; c++) {
-      const drops = 1 + Math.floor(Math.random() * 3);
-      for (let k = 0; k < drops; k++) {
-        rain.push({
-          x: (c + Math.random()) * colW,
-          y: Math.random() * h,
-          spd: 1.5 + Math.random() * 3,
-          len: lenLo + Math.random() * (lenHi - lenLo),
-          kind: Math.random() < 0.5 ? 0 : 1,
-        });
-      }
-    }
-  }
-
-  /** 机箱结构层（core）：确定性板（genSectionTargets 纯函数：固定 4 芯片+7 走线、8px 网格） */
-  function genMachine() {
-    const layout = genSectionTargets('hero', w, h);
-    chips = layout.chips;
-    traces = layout.traces;
-    traceLit = traces.map((tr) => tr.segs.map(() => 0));
-    pkts = [];
-    dustP = null;
-    pktAt = t + (SHOW_MODE ? 40 : 60);
-    dustAt = t + (SHOW_MODE ? 90 : nextInRange(Math.random, 8, 12) * 60);
-    // 重组态初始化（首屏 = hero 基础态，无 tween）
-    tweenFromChips = cloneChips(chips);
-    tweenFromTraces = cloneTraces(traces);
-    tweenToChips = cloneChips(chips);
-    tweenToTraces = cloneTraces(traces);
-    tweenStart = -1;
-    tweening = false;
-    sectionNow = 'hero';
-  }
-
-  function cloneChips(src: MachineChip[]): MachineChip[] {
-    return src.map((c) => ({ ...c, pins: c.pins.map((p) => ({ ...p })) }));
-  }
-  function cloneTraces(src: MachineTrace[]): MachineTrace[] {
-    return src.map((tr) => ({ ...tr, segs: tr.segs.map((s) => ({ ...s })) }));
-  }
-
-  /** section 切换：设定目标板并启动错峰 snap tween（离散重组，连续相机另算） */
-  function setSection(section: SectionId) {
-    if (section === sectionNow && !tweening) return;
-    sectionNow = section;
-    const target = genSectionTargets(section, w, h);
-    tweenFromChips = cloneChips(chips);
-    tweenFromTraces = cloneTraces(traces);
-    tweenToChips = target.chips;
-    tweenToTraces = target.traces;
-    tweenStart = frame;
-    tweening = true;
-  }
-
-  /** 每帧推进重组 tween（错峰 + Silk）：tweening 期间把 chips/traces 插值到目标 */
-  function stepTween() {
-    if (!tweening) return;
-    const elapsed = frame - tweenStart;
-    const nChips = chips.length;
-    const nTr = traces.length;
-    // 元素顺序：芯片在前、走线在后，逐元素错峰
-    for (let i = 0; i < nChips; i++) {
-      const local = clamp01((elapsed - i * TWEEN_STAGGER) / TWEEN_DUR);
-      const e = easeSilk(local);
-      const fc = tweenFromChips[i];
-      const tc = tweenToChips[i];
-      const cc = chips[i];
-      cc.x = mix(fc.x, tc.x, e);
-      cc.y = mix(fc.y, tc.y, e);
-      cc.pins = chipPins(cc, cc.main); // 引脚随芯片位置重算
-    }
-    for (let j = 0; j < nTr; j++) {
-      const i = nChips + j;
-      const local = clamp01((elapsed - i * TWEEN_STAGGER) / TWEEN_DUR);
-      const e = easeSilk(local);
-      const ft = tweenFromTraces[j];
-      const tt = tweenToTraces[j];
-      const ct = traces[j];
-      let total = 0;
-      for (let k = 0; k < ct.segs.length; k++) {
-        const fs = ft.segs[k];
-        const ts = tt.segs[k];
-        const cs = ct.segs[k];
-        cs.x1 = mix(fs.x1, ts.x1, e);
-        cs.y1 = mix(fs.y1, ts.y1, e);
-        cs.x2 = mix(fs.x2, ts.x2, e);
-        cs.y2 = mix(fs.y2, ts.y2, e);
-        cs.len = Math.abs(cs.x2 - cs.x1) + Math.abs(cs.y2 - cs.y1);
-        total += cs.len;
-      }
-      ct.total = total || 1;
-    }
-    if (elapsed > (nChips + nTr - 1) * TWEEN_STAGGER + TWEEN_DUR) {
-      chips = cloneChips(tweenToChips);
-      traces = cloneTraces(tweenToTraces);
-      traceLit = traces.map((tr) => tr.segs.map(() => 0));
-      tweening = false;
-    }
-  }
-
-  function clamp01(n: number): number {
-    return n < 0 ? 0 : n > 1 ? 1 : n;
-  }
-
-  /** 滚动进度 + 鼠标归一化（驱动 2D 相机）；reduced 下相机退化为按 section 离散 */
-  function updateCamera() {
-    const denom = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-    scrollProg = (window.scrollY || 0) / denom;
-    if (reduced.matches) {
-      // 离散推拉：进度按当前 section 索引阶梯（去连续平滑），但仍用 cameraFor 算视差×0.5
-      const idx = SECTION_IDS.indexOf(sectionNow);
-      scrollProg = idx / (SECTION_IDS.length - 1);
-    }
-    const cam = cameraFor(scrollProg, mNX, mNY, reduced.matches);
-    camScale = cam.scale;
-    camOX = cam.ox;
-    camOY = cam.oy;
-  }
-
-  /** core 事件层步进（默认静：地表 = 结构层；事件 = 信号包/尘埃/仪式/反馈） */
-  function stepCore() {
-    // 磷光级联衰减（每步 ×0.94 ≈ 0.5s 半衰；cadence=2 时更缓）
-    for (let i = 0; i < traceLit.length; i++)
-      for (let k = 0; k < traceLit[i].length; k++) traceLit[i][k] *= 0.94;
-
-    // 开机仪式：走线级联上电（芯片向外逐段点亮，约 1s）
-    if (bootCascade >= 0) {
-      bootCascade--;
-      const p = Math.min(1, (BOOT_DUR - bootCascade) / BOOT_DUR);
-      for (let i = 0; i < traces.length; i++) {
-        const tr = traces[i];
-        let acc = 0;
-        for (let k = 0; k < tr.segs.length; k++) {
-          acc += tr.segs[k].len;
-          if (acc / tr.total <= p) traceLit[i][k] = Math.max(traceLit[i][k], 0.85);
-        }
-      }
-      if (bootCascade <= 0) bootCascade = -1;
-    }
-
-    // 信号包：6-12s jitter 一只，并发 ≤2（默认静——大多数时间地表只留结构层）
-    if (pkts.length < 2 && t >= pktAt && traces.length > 0) {
-      pkts.push({
-        tr: Math.floor(Math.random() * traces.length),
-        u: 0,
-        spd: 1 / (72 + Math.random() * 48),
-        dir: 1,
-      });
-      pktAt = t + (SHOW_MODE ? 40 : nextInRange(Math.random, 3, 6) * 60); // 3-6s：任意 10s 停留必见至少 1 只
-    }
-    for (let i = pkts.length - 1; i >= 0; i--) {
-      const p = pkts[i];
-      p.u += p.spd * p.dir;
-      const tr = traces[p.tr];
-      const pos = packetPos(tr.segs, tr.total, p.u);
-      if (pos.seg >= 0 && pos.seg < traceLit[p.tr].length)
-        traceLit[p.tr][pos.seg] = Math.max(traceLit[p.tr][pos.seg], PACKET_LIT);
-      if (p.u <= 0 || p.u >= 1) pkts.splice(i, 1);
-    }
-
-    // 尘埃：15-25s 一颗（罕见 = 被注意时才像机器真的在运行）
-    if (!dustP && t >= dustAt) {
-      const sp = dustSpawn(w, h, Math.random);
-      dustP = {
-        ...sp,
-        vx: 0.08 + Math.random() * 0.12,
-        vy: 0.02 + Math.random() * 0.05,
-        ph: Math.random() * Math.PI * 2,
-      };
-      dustAt = t + (SHOW_MODE ? 90 : nextInRange(Math.random, 8, 12) * 60); // 8-12s（原 15-25s 太久）
-    }
-    if (dustP) {
-      dustP.x += dustP.vx;
-      dustP.y += dustP.vy + Math.sin(t * 0.01 + dustP.ph) * 0.06;
-      if (dustP.y > h + 4 || dustP.x > w + 4) dustP = null;
-    }
-
-    if (flashAt) {
-      flashAt.age++;
-      if (flashAt.age > 8) flashAt = null;
-    }
-    if (cheatT > 0) cheatT--;
-    if (retuneT > 0) retuneT--;
-  }
-
-  /** 核心亮度提升（0..1）：开机仪式 / Konami 全开 / 主题再调谐 —— 仪式峰值拉高（走线当时冲 0.7+） */
-  function coreBoost() {
-    let b = 0;
-    if (bootCascade >= 0) b = Math.max(b, ((BOOT_DUR - bootCascade) / BOOT_DUR) * 0.7);
-    if (cheatT > 0) b = Math.max(b, (cheatT / 90) * 0.9);
-    if (retuneT > 0) b = Math.max(b, (retuneT / 24) * 0.5);
-    return b;
-  }
-
-  /** 点到曼哈顿段的最近距离（供点击→最近走线回传） */
-  function nearestTrace(x: number, y: number): number {
-    let best = -1;
-    let bestD = Infinity;
-    for (let i = 0; i < traces.length; i++) {
-      for (const s of traces[i].segs) {
-        let d: number;
-        if (s.x1 === s.x2) {
-          const cy = Math.min(Math.max(y, s.y1), s.y2);
-          d = Math.hypot(s.x1 - x, cy - y);
-        } else {
-          const cx = Math.min(Math.max(x, s.x1), s.x2);
-          d = Math.hypot(cx - x, s.y1 - y);
-        }
-        if (d < bestD) {
-          bestD = d;
-          best = i;
-        }
-      }
-    }
-    return best;
-  }
-
-  // ---- 帧更新 ----
-  function step() {
-    if (mode === 'core') {
-      stepCore();
-      return;
-    }
-    for (const s of stars) {
-      s.y -= s.spd;
-      s.x += Math.sin(t * 0.02 + s.ph) * 0.18;
-      if (s.y < -3) {
-        s.y = h + 3;
-        s.x = Math.random() * w;
-      }
-    }
-    // 偶发流星（约每 90 帧一条）
-    if (!streak && Math.random() < 0.011) {
-      const ang = Math.PI + (Math.random() - 0.5) * 0.7; // 向左上/右上斜飞
-      const spd = 3.2 + Math.random() * 2.4;
-      streak = {
-        x: Math.random() * w,
-        y: Math.random() * h * 0.5,
-        vx: Math.cos(ang) * spd,
-        vy: Math.sin(ang) * spd,
-        life: 26,
-      };
-    }
-    if (streak) {
-      streak.x += streak.vx;
-      streak.y += streak.vy;
-      streak.life -= 1;
-      if (streak.life <= 0) streak = null;
-    }
-    for (const b of bands) {
-      b.y += b.spd;
-      if (b.y > h + 8) b.y = -8;
-    }
-    for (const d of rain) {
-      d.y += d.spd;
-      if (d.y - d.len > h) {
-        d.y = -d.len - 2;
-        d.x = Math.random() * w;
-      }
-    }
-    for (let i = pulses.length - 1; i >= 0; i--) {
-      const p = pulses[i];
-      const age = t - p.t0;
-      const dead =
-        (p.kind === 'ring' && age > 60) ||
-        (p.kind === 'sweep' && age > 50) ||
-        (p.kind === 'spark' && age > 18);
-      if (dead) pulses.splice(i, 1);
-    }
-  }
-
-  // ---- 绘制 ----
-  function drawStars() {
-    // 滚动视差：近层星尘随 scrollY 以 22% 页速漂移（纯函数层 starViewY 提供卷绕）
-    const scrollY = window.scrollY || 0;
-    // 光晕层（halo）→ 核心层，深色主题走 additive
-    setAdditive(ctx, additive);
-    ctx.fillStyle = styles.starHalo;
-    for (const s of stars) {
-      if (s.tier === 0) continue;
-      const sy = starViewY(s.y, h, scrollY, s.depth);
-      ctx.fillRect(Math.round(s.x) - 1, Math.round(sy) - 1, s.size + 2, s.size + 2);
-    }
-    setAdditive(ctx, false);
-    ctx.fillStyle = styles.starBack;
-    for (const s of stars) {
-      if (s.tier !== 0) continue;
-      const sy = starViewY(s.y, h, scrollY, s.depth);
-      ctx.fillRect(Math.round(s.x), Math.round(sy), 1, 1);
-    }
-    ctx.fillStyle = styles.starCore;
-    for (const s of stars) {
-      if (s.tier !== 1) continue;
-      const sy = starViewY(s.y, h, scrollY, s.depth);
-      ctx.fillRect(Math.round(s.x), Math.round(sy), s.size, s.size);
-    }
-    // 流星：亮头 + 渐隐尾
-    if (streak) {
-      setAdditive(ctx, additive);
-      ctx.fillStyle = styles.streakTail;
-      ctx.fillRect(Math.round(streak.x), Math.round(streak.y), 3, 1);
-      ctx.fillRect(Math.round(streak.x - streak.vx * 2), Math.round(streak.y - streak.vy * 2), 2, 1);
-      setAdditive(ctx, false);
-      ctx.fillStyle = styles.streak;
-      ctx.fillRect(Math.round(streak.x), Math.round(streak.y), 1, 1);
-    }
-  }
-
-  function drawScan() {
-    setAdditive(ctx, additive);
-    const TAIL = 4; // 淡尾步数（细带弱尾，阅读页友好）
-    for (const b of bands) {
-      const th = scanThickness(t * 0.02 + b.ph);
-      const y = Math.round(b.y);
-      // 光晕层
-      ctx.fillStyle = styles.scanHalo;
-      ctx.fillRect(0, y - 1, w, th + 3);
-      // 淡尾：上/下各 TAIL 步，alpha 逐步衰减（bgfx-motion.scanTailAlpha）
-      ctx.fillStyle = styles.scanBand;
-      for (let i = 0; i < TAIL; i++) {
-        ctx.globalAlpha = scanTailAlpha(i, TAIL);
-        ctx.fillRect(0, y - th - 1 - i, w, 1);
-        ctx.fillRect(0, y + th + 1 + i, w, 1);
-      }
-      ctx.globalAlpha = 1;
-      // 亮芯细带
-      ctx.fillStyle = styles.scanBand;
-      ctx.fillRect(0, y, w, th + 1);
-      ctx.fillStyle = styles.scanLead;
-      ctx.fillRect(0, y - 1, w, 1);
-    }
-    setAdditive(ctx, false);
-  }
-
-  function drawRain() {
-    setAdditive(ctx, additive);
-    for (const d of rain) {
-      ctx.fillStyle = d.kind === 0 ? styles.rainBody : styles.rainBodyB;
-      ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, Math.round(d.len));
-      ctx.fillStyle = styles.rainHead;
-      ctx.fillRect(Math.round(d.x), Math.round(d.y - 2), 1, 2);
-    }
-  }
-
-  function drawWave() {
-    const cy = Math.round(h * 0.42);
-    const { a1, a2 } = waveAmplitude(h);
-    // 光晕层（整条粗描边）
-    setAdditive(ctx, additive);
-    ctx.fillStyle = styles.waveHalo;
-    for (let x = 0; x < w; x += 2) {
-      const y =
-        cy + Math.sin(x * 0.02 + t * 0.045) * a1 + Math.sin(x * 0.007 - t * 0.02) * a2;
-      ctx.fillRect(x, Math.round(y) - 1, 2, 3);
-    }
-    setAdditive(ctx, false);
-    // 镜像倒影（淡）
-    ctx.fillStyle = styles.waveMirror;
-    for (let x = 0; x < w; x += 3) {
-      const y =
-        cy + Math.sin(x * 0.02 + t * 0.045) * a1 + Math.sin(x * 0.007 - t * 0.02) * a2;
-      ctx.fillRect(x, Math.round(cy + (cy - y)), 3, 1);
-    }
-    // 核心波形
-    ctx.fillStyle = styles.waveCore;
-    for (let x = 0; x < w; x += 1) {
-      const y =
-        cy + Math.sin(x * 0.02 + t * 0.045) * a1 + Math.sin(x * 0.007 - t * 0.02) * a2;
-      ctx.fillRect(x, Math.round(y), 1, 1);
-    }
-    // 基线
-    ctx.fillStyle = styles.waveMirror;
-    ctx.fillRect(0, cy, w, 1);
-  }
-
-  function drawGrid() {
-    const cy = Math.round(h * 0.62);
-    const vx = w / 2;
-    setAdditive(ctx, additive);
-    // 地平线辉光带（3 层递减）
-    ctx.fillStyle = styles.gridGlow;
-    ctx.fillRect(0, cy - 14, w, 28);
-    ctx.fillStyle = styles.gridLineDim;
-    ctx.fillRect(0, cy - 6, w, 12);
-    setAdditive(ctx, false);
-    ctx.fillStyle = styles.gridHorizon;
-    ctx.fillRect(0, cy, w, 1);
-    // 透视竖线（汇聚到消失点）
-    for (let i = -6; i <= 6; i++) {
-      const f = i / 6;
-      const xTop = vx + f * w * 0.3;
-      const xBot = vx + f * w * 0.52;
-      ctx.fillStyle = Math.abs(f) < 0.4 ? styles.gridLine : styles.gridLineDim;
-      for (let y = cy; y < h; y += 3) {
-        const x = xTop + ((xBot - xTop) * (y - cy)) / (h - cy);
-        ctx.fillRect(Math.round(x), y, 1, 2);
-      }
-    }
-    // 透视横线：间距随 z 增大，向观众推进
-    const s = 22;
-    const off = ((t * 1.2) % s);
-    for (let k = 1; k < 16; k++) {
-      const z = k * s + off;
-      const y = cy + (z * z) / (h * 1.35);
-      if (y >= h) break;
-      ctx.fillStyle = k % 2 === 0 ? styles.gridLine : styles.gridLineDim;
-      ctx.fillRect(0, Math.round(y), w, 2);
-    }
-  }
-
-  function drawPulses() {
-    if (pulses.length === 0) return;
-    setAdditive(ctx, additive);
-    for (const p of pulses) {
-      const age = t - p.t0;
-      if (p.kind === 'ring') {
-        const r = 6 + age * 2.6;
-        const a = Math.max(0, 0.5 - age * 0.008);
-        if (a <= 0) continue;
-        ctx.strokeStyle = styles.pulseRing;
-        ctx.globalAlpha = a;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      } else if (p.kind === 'sweep') {
-        const y = -16 + age * (h + 32) / 50;
-        ctx.fillStyle = styles.pulseSweep;
-        ctx.globalAlpha = Math.max(0, 0.55 - age * 0.011);
-        ctx.fillRect(0, Math.round(y), w, 2);
-        ctx.globalAlpha = 1;
-      } else if (p.kind === 'spark') {
-        ctx.fillStyle = styles.pulseSweep;
-        ctx.globalAlpha = Math.max(0, 0.8 - age * 0.045);
-        ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
-        ctx.fillRect(Math.round(p.x) + 2, Math.round(p.y) + 1, 1, 1);
-        ctx.globalAlpha = 1;
-      }
-    }
-    setAdditive(ctx, false);
-  }
-
-  function drawCore() {
-    const boost = coreBoost();
-    // non-hero（index 首屏以下 / blog 等）：scrim 压 72%，结构线加一层描边保持可辨
-    const vividMode = wrap.dataset.vivid === '1';
-    // section 重组 tween + 2D 相机（每帧推进，连续相机/离散 snap）
-    stepTween();
-    updateCamera();
-    // 抗 scrim 压暗补偿强度：content 页整页覆盖恒 1；index 随滚动 0→1（scrim 顶边在 100vh）
-    const scrimCover = scrimCoverage(window.scrollY || 0, window.innerHeight, vividMode);
-    // 调试钩子（验收/排查用）：每帧汇报机器内部状态
-    ;(window as unknown as { __bgfxDebug?: Record<string, unknown> }).__bgfxDebug = {
-      mode,
-      section: sectionNow,
-      traces: traces.length,
-      segs: traces.reduce((n, tr) => n + tr.segs.length, 0),
-      chips: chips.length,
-      pkts: pkts.length,
-      litSum: traces.reduce((n, tr, i) => n + traceLit[i].reduce((a, b) => a + b, 0), 0),
-      boost: Math.round(boost * 100) / 100,
-      cam: Math.round(camScale * 100) / 100,
-      boot: bootCascade,
-    };
-    // 指针反变换到板坐标（相机缩放/平移后），供近场照明对齐
-    const bpx = px >= 0 ? (px - w / 2) / camScale + w / 2 - camOX : -1;
-    const bpy = py >= 0 ? (py - h / 2) / camScale + h / 2 - camOY : -1;
-    // 悬停近场照明：指针 80px 内段临时 +0.22（只作用于绘制，不落状态，零新粒子）
-    const near = (s: TraceSeg) =>
-      bpx >= 0 &&
-      (s.x1 === s.x2
-        ? Math.abs(s.x1 - bpx) <= 80 && bpy >= Math.min(s.y1, s.y2) - 80 && bpy <= Math.max(s.y1, s.y2) + 80
-        : Math.abs(s.y1 - bpy) <= 80 && bpx >= Math.min(s.x1, s.x2) - 80 && bpx <= Math.max(s.x1, s.x2) + 80);
-    // 2D 相机变换：缩放 + 鼠标视差（围绕视口中心），结构层绘制前施加、结束后还原
-    ctx.save();
-    ctx.translate(w / 2, h / 2);
-    ctx.scale(camScale, camScale);
-    ctx.translate(-w / 2 + camOX, -h / 2 + camOY);
-    // 1) 结构层：走线（type 线宽 2px 电源轨 / 1px 信号线；稳态 dim → 磷光/事件 accent）
-    for (let i = 0; i < traces.length; i++) {
-      const t = traces[i];
-      const segs = t.segs;
-      for (let k = 0; k < segs.length; k++) {
-        const s = segs[k];
-        const lit = Math.min(1, traceLit[i][k] + boost + (near(s) ? 0.22 : 0));
-        if (lit <= 0.03) {
-          fillSeg(s, styles.mDim, t.px === 2 ? 0.5 : 0.32, t.px); // 电源轨略亮
-          if (!vividMode) fillSeg(s, styles.mDim, 0.15, t.px); // 补偿 scrim 压暗
-          continue;
-        }
-        // 双芯辉光：分层由 coreGlow() 给（白芯门控 + 几何约束 + 抗 scrim 补偿全在 lib 层）
-        const layers = coreGlow(lit, { kind: 'trace', scrim: scrimCover });
-        if (layers.length > 0) {
-          setAdditive(ctx, additive);
-          for (const L of layers)
-            fillSeg(
-              s,
-              L.slot === 'core' ? styles.mWhite : styles.mAccent,
-              L.alpha,
-              t.px + L.grow,
-              -L.grow / 2
-            );
-          setAdditive(ctx, false);
-        } else {
-          fillSeg(s, styles.mDimPin, 0.35 + lit * 0.4, t.px); // 预热态（未达辉光地板）
-        }
-      }
-    }
-    // 2) 芯片：两类封装（主芯 40×40 带引脚+pin1；辅芯 16×12）+ 极淡内填充+描边
-    for (const chip of chips) {
-      // 内填充（托出芯片）
-      ctx.fillStyle = styles.mChipFill;
-      ctx.fillRect(chip.x + 1, chip.y + 1, chip.w - 2, chip.h - 2);
-      // 描边
-      ctx.fillStyle = styles.mDimPin;
-      ctx.globalAlpha = 0.5;
-      ctx.fillRect(chip.x, chip.y, chip.w, 1);
-      ctx.fillRect(chip.x, chip.y + chip.h - 1, chip.w, 1);
-      ctx.fillRect(chip.x, chip.y, 1, chip.h);
-      ctx.fillRect(chip.x + chip.w - 1, chip.y, 1, chip.h);
-      ctx.globalAlpha = 1;
-      // 引脚（2×4，与走线同网格锚点）
-      for (const pin of chip.pins) {
-        const horizontal = pin.y === chip.y || pin.y === chip.y + chip.h;
-        ctx.fillStyle = styles.mDim;
-        ctx.globalAlpha = 0.7;
-        if (horizontal) ctx.fillRect(pin.x - 1, pin.y - 1, 2, 2);
-        else ctx.fillRect(pin.x - 1, pin.y - 1, 2, 2);
-        ctx.globalAlpha = 1;
-      }
-      if (chip.main) {
-        ctx.fillStyle = styles.mLit;
-        ctx.globalAlpha = 0.9;
-        ctx.fillRect(chip.x - 2, chip.y - 2, 2, 2); // pin1 缺口（左上）
-        ctx.globalAlpha = 1;
-      }
-    }
-    // 3) 信号包：additive 双芯辉光（--gb-3 白热芯 + --gb-2 两级踏阶晕）+ 抗 scrim 补偿
-    setAdditive(ctx, additive);
-    for (const p of pkts) {
-      const pos = packetPos(traces[p.tr].segs, traces[p.tr].total, p.u);
-      for (const L of coreGlow(PACKET_LIT, { kind: 'packet', scrim: scrimCover })) {
-        const off = L.grow / 2; // grow 0→1px 芯 / 2→3×3 中晕 / 4→5×5 外晕
-        ctx.globalAlpha = L.alpha;
-        ctx.fillStyle = L.slot === 'core' ? styles.mWhite : styles.mAccent;
-        ctx.fillRect(pos.x - off, pos.y - off, 1 + L.grow, 1 + L.grow);
-      }
-    }
-    ctx.globalAlpha = 1;
-    setAdditive(ctx, false);
-    // 4) 尘埃：罕见 1px + 呼吸闪烁（光柱感；基准提到 0.5）
-    if (dustP) {
-      const flick = 0.5 + 0.4 * Math.max(0, Math.sin(t * 0.05 + dustP.ph));
-      ctx.fillStyle = styles.mDimPin;
-      ctx.globalAlpha = flick;
-      ctx.fillRect(Math.round(dustP.x), Math.round(dustP.y), 1, 1);
-      ctx.globalAlpha = 1;
-    }
-    // 5) 点击 reticle：方括号渐隐（「键被机器收下」）
-    if (flashAt) {
-      const a = Math.max(0, 1 - flashAt.age / 8);
-      setAdditive(ctx, additive);
-      ctx.strokeStyle = styles.mLit;
-      ctx.globalAlpha = a;
-      ctx.strokeRect(flashAt.x - 4, flashAt.y - 4, 8, 8);
-      ctx.globalAlpha = 1;
-      setAdditive(ctx, false);
-    }
-    // 6) 待机灯：右下角独立区（x=w-32, y=h-32，净空座谈；评审摆位——不在控件簇/导航旁）
-    const ledX = w - 28;
-    const ledY = h - 28;
-    const stable = ledPhase(t);
-    const blink = bootCascade >= 0 && Math.floor((BOOT_DUR - bootCascade) / 30) % 2 === 0 ? 1 : 0;
-    const b = Math.max(stable, blink);
-    setAdditive(ctx, additive);
-    ctx.fillStyle = styles.mLitGlow;
-    ctx.globalAlpha = 0.6;
-    ctx.fillRect(ledX - 6, ledY - 6, 16, 16);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = styles.mLit;
-    ctx.globalAlpha = 0.4 + 0.6 * b;
-    ctx.fillRect(ledX, ledY, 4, 4);
-    ctx.globalAlpha = 1;
-    setAdditive(ctx, false);
-    ctx.restore(); // 结束 2D 相机变换
-  }
-
-  /**
-   * 轴对齐线段绘制（带线宽：电源轨 2px / 信号线 1px）。
-   * off = 跨轴偏移（辉光层传 -grow/2，使晕以芯为中心对称外扩；否则晕会单侧偏、像投影而非辉光）。
-   */
-  function fillSeg(s: TraceSeg, color: string, alpha: number, width = 1, off = 0) {
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = color;
-    if (s.x1 === s.x2) ctx.fillRect(s.x1 + off, Math.min(s.y1, s.y2), width, s.len);
-    else ctx.fillRect(Math.min(s.x1, s.x2), s.y1 + off, s.len, width);
-    ctx.globalAlpha = 1;
-  }
+  palette = rt.palette;
+  styles = buildStyles(palette);
+  additive = rt.additive;
 
   function draw() {
     ctx.clearRect(0, 0, w, h);
-    if (mode === 'core') drawCore();
-    else if (mode === 'stars') drawStars();
-    else if (mode === 'scan') drawScan();
-    else if (mode === 'rain') drawRain();
-    else if (mode === 'wave') drawWave();
-    else if (mode === 'grid') drawGrid();
-    drawPulses();
+    if (mode === 'world') drawWorld();
   }
 
   reduced.addEventListener('change', () => {
     cadence = reduced.matches ? 2 : 1;
+    // 雷闪不再随 reduced-motion 停（见 applyWx 注释：合规的天气现象）；
+    // 窗户振动仍在绘制处被 reduced.matches 拦住。
   });
 
-  // ---- 音画联动：'8bit:fx' 事件 → core 机器响应 / 六模式脉冲 ----
-  window.addEventListener('8bit:fx', (e) => {
-    if (mode === 'off') return;
-    const kind = (e as CustomEvent<string>).detail;
-    if (mode === 'core') {
-      // 机器响应（克制：用完即回地板）
-      if (kind === 'click') {
-        flashAt = {
-          x: Math.round(w * (0.2 + Math.random() * 0.6)),
-          y: Math.round(h * (0.3 + Math.random() * 0.4)),
-          age: 0,
-        };
-        const tr = nearestTrace(flashAt.x, flashAt.y);
-        if (tr >= 0 && pkts.length < 3)
-          pkts.push({ tr, u: 1, spd: 1 / 60, dir: -1 }); // 「键被机器收下」回传
-        return;
-      }
-      if (kind === 'nav') {
-        for (let k = 0; k < 2 && pkts.length < 3; k++) {
-          pkts.push({ tr: Math.floor(Math.random() * traces.length), u: 1, spd: 1 / 72, dir: -1 });
-        }
-        return;
-      }
-      // hover：近场照明由 pointermove 驱动，零新粒子
-      return;
-    }
-    if (pulses.length >= 5) pulses.shift();
-    const rpx = w * (0.2 + Math.random() * 0.6);
-    const rpy = h * (0.35 + Math.random() * 0.4);
-    if (kind === 'click') pulses.push({ kind: 'ring', x: rpx, y: rpy, t0: t });
-    else if (kind === 'nav') pulses.push({ kind: 'sweep', x: 0, y: 0, t0: t });
-    else if (kind === 'hover') pulses.push({ kind: 'spark', x: rpx, y: rpy, t0: t });
-  });
-
-  // 指针追踪（core 近场照明 + 2D 相机鼠标视差）
+  // 指针追踪（世界视差：归一化坐标）
   window.addEventListener('pointermove', (e) => {
-    px = e.clientX;
-    py = e.clientY;
     mNX = (e.clientX / window.innerWidth) * 2 - 1;
     mNY = (e.clientY / window.innerHeight) * 2 - 1;
   });
 
-  // ---- section 重组：跟踪首页当前可见 section（其余路由无 section → 保持 hero 基础态） ----
-  (function trackSections() {
-    const els = Array.from(document.querySelectorAll<HTMLElement>('section[id]'));
-    const tracked = els.filter((el) => SECTION_IDS.includes(el.id as SectionId));
-    if (tracked.length === 0) return; // 非首页：基础态不变
-    const ratios = new Map<string, number>();
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const en of entries) ratios.set(en.target.id, en.intersectionRatio);
-        let best = '';
-        let bestR = 0;
-        for (const [id, r] of ratios) if (r > bestR) {
-          bestR = r;
-          best = id;
-        }
-        if (best && SECTION_IDS.includes(best as SectionId)) setSection(best as SectionId);
-      },
-      { threshold: [0.25, 0.5, 0.75] }
-    );
-    tracked.forEach((el) => io.observe(el));
-  })();
+  // ---- 天空调试台（SideDock 的 DEV 开关派发）：重算生效天气 ----
+  // 总开关关掉时 debugWeatherKind 会自然回落到实况，本监听无需区分开/关。
+  // 时间旅行不用监听：下一帧 stepWorld 自己读 debugNow()。
+  window.addEventListener('8bit:wx-debug', () => applyWx(debugWeatherKind(liveKind)));
 
-  // Konami 联动：'系统全开'——全部走线短暂满亮（1.5s 磷光级联衰减）
-  window.addEventListener('8bit:cheat', () => {
-    if (mode !== 'core') return;
-    cheatT = 90; // 1.5s（60fps）；不抢前景爆裂——背景做「系统全开」
-  });
-
-  // ---- 开关 / 循环 ----
-  // 按钮 + 点击在 SideDock；这里只管 canvas/scrim。模式由 dock 写 bgfxPref，
-  // frame() 头部轮询 → 模式变就重画 + sync。
+  // ---- 开关 ----
   function apply() {
     canvas.hidden = mode === 'off';
-    // 背景退场时 scrim 同步隐藏：canvas 不画时玻璃层只剩压暗，会染暗整页
     if (scrim) scrim.hidden = mode === 'off';
   }
 
-  // ---- 开机仪式（会话一次：core 默认时的首屏上电） ----
+  // ---- 首访仪式：world 播「世界快进」点亮仪式；core 播走线上电（同一把会话锁） ----
   let playBoot = false;
   try {
     playBoot = bootOnce(
@@ -1037,10 +2645,23 @@ const { heroVivid = false } = Astro.props;
       '1'
     );
   } catch {
-    playBoot = false; // storage 不可用 → 不播，避免每次刷新都演
+    playBoot = false;
   }
-  bootCascade = (mode === 'core' && playBoot) ? BOOT_DUR : -1;
+  if (mode === 'world' && playBoot && !reduced.matches) {
+    bootP = 0;
+    alt = -0.55; // 仪式起点 = 深夜地板（BOOT_ALT）
+    daylight = daylightFor(alt);
+    starlight = starlightFor(alt);
+  } else {
+    bootP = 1;
+    const m = skyMoment(debugNow(), anchors);
+    alt = m.sunAlt;
+    daylight = m.daylight;
+    starlight = m.starlight;
+  }
+  realAlt = alt;
 
+  applyLiveWeather();
   apply();
   rt.resize();
   rt.sync();
@@ -1051,26 +2672,53 @@ const { heroVivid = false } = Astro.props;
     /* 固定视口装饰层：负 z-index 压在 body 背景之上、页面内容之下（内容透明背景透出动画） */
     position: fixed;
     inset: 0;
-    z-index: -1;
+    z-index: -3;
     overflow: hidden;
     pointer-events: none;
   }
 
-  /* 可读性 scrim：内容流内绝对层，覆盖 [top, 页尾]（body 已定位 relative）
-     color-mix gb-0 + 透明 → 按主题半透明玻璃，动画辉光被压暗、文字保持对比度 */
+  /* 可读性 scrim：内容流内绝对层，覆盖 [top, 页尾]（body 已定位 relative）。
+     ★ z-index 必须为负（2026-09-19 修，实测事故）：本层契约是「canvas 之上、内容之下」，
+     但定位元素 + z-index:0 会画在静态定位的块级内容之上。
+     装饰栈（自上而下）：内容 auto/0 ← scrim -1 ← 扫描线 -2 ← canvas -3 ← 网格 -4。
+     **scrim 必须在扫描线之上**：否则扫描线不再被压暗，两个主题的无底色文字破 AA。 */
   .bgfx-scrim {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
     left: 0;
-    z-index: 0;
+    z-index: -1;
     pointer-events: none;
-    background: color-mix(in srgb, var(--gb-0) 72%, transparent);
+    /* 2026-10-29：由平铺 72% 改为**纵向梯度**。
+       起因（实测）：窗下一屏是「房间」（#hero 工位），平铺 72% 把桌面/台灯压到
+       1.09:1——整间屋子读作空墙（截图实锤，桌与墙同色）。
+       坐标：本层 top 由 JS 钉到窗那一屏的底边 ⇒ 0 = hero 顶。
+       hero 一屏内 30%→52%，到 1.6 屏回到 72%——正文区（about 及以下）照旧。 */
+    background-color: transparent;
+    background-image:
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--c-bg) 8%, transparent) 0,
+        color-mix(in srgb, var(--c-bg) 14%, transparent) 100vh,
+        color-mix(in srgb, var(--c-bg) 72%, transparent) 150vh
+      ),
+      linear-gradient(
+        to right,
+        transparent 0,
+        color-mix(in srgb, var(--c-bg) 35%, transparent) 2rem,
+        color-mix(in srgb, var(--c-bg) 35%, transparent) calc(100% - 2rem),
+        transparent 100%
+      );
+    background-size:
+      100% 100%,
+      min(calc(var(--content-max) + 4rem), 100%) 100%;
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
   }
 
   .bgfx-scrim.hero-vivid {
-    /* 首屏免遮：hero 全亮；滚出视口后 scrim 从底部自然进入，正文区全程受保护 */
+    /* 首屏免遮：hero 全亮（「窗外」世界是首屏的内容画）；滚出视口后 scrim 自然进入 */
     top: 100vh;
   }
 

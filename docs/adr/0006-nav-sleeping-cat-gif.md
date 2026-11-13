@@ -45,4 +45,4 @@ Accepted（2026-08-31，作者经 grilling 设计树收敛后拍板）
 
 - 素材处理输出：`public/cats/nav_sleep.gif`
 - 组件：`src/components/Nav.astro`（图已换）、`src/components/Footer.astro`（猫已删）
-- `src/components/CatSprite.astro` 已不再被引用（历史遗留，可留作复用或后续删除）
+- `src/components/CatSprite.astro` **已于 2026-09-08 删除**（历史遗留，Nav 改用固定色 GIF 后无任何引用；ADR-0014 同时把 hero 头像换成 CRT 终端）。
