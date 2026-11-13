@@ -1,0 +1,333 @@
+---
+/**
+ * CRT 终端（hero 工位屏内容物，2026-10-02 作者终局裁决）
+ *
+ * 「这东西长在电脑里，内容必须跟电脑有关；光标在打字」——屏里是一扇**终端应用
+ * 窗口**（标题栏 matt@8bit-me + 状态栏 zsh · 80×19），逐字敲命令、回车、输出
+ * 瞬间打出；**四个命令剧本随机轮播**（放完一个随机挑下一个，不连续重复），
+ * 永续环境循环。代码生成，零图片依赖。
+ *
+ * 前身：手绘终端 SVG（v2）→ ComfyUI 像素画（v3/v4，封存）→ 单剧本打字机
+ * （boot 自白，被否「敲的应该是命令」）→ v6 命令剧本 ×4 随机轮播（本轮）。
+ *
+ * 数据同源：文章列表/篇数/更新日期来自 `getPublishedPosts`（与 hero 读数、
+ * /blog 同一条链）；commit hash 为装饰性静态行（aria-hidden 装饰层，允许陈旧）。
+ *
+ * 无 JS 兜底：服务端渲染剧本 A 的完整转写（无 JS 也读得到内容），JS 接管后
+ * 清屏进入轮播；脚本失败不会吃掉兜底文本。
+ *
+ * 动效纪律（ap-motion-vocab / ADR-0005 / ADR-0017 同族）：
+ *   - 敲键 55ms/字（人手节奏）；敲键时光标常亮、空闲/输出/等待时闪烁
+ *     （`1s steps(2, start)`，与 .tw-caret 同拍）；
+ *   - 输出行 60ms 级联瞬时打出（真终端不逐字蹦输出）；
+ *   - 满屏后旧行滚出（scrollHeight 裁剪），打字区域锁死在屏幕盒内，
+ *     页面级布局零位移；
+ *   - reduced-motion 下照常播（ADR-0005 知情覆写，装饰层 aria-hidden 缓解）。
+ *
+ * 媒介纪律：桌面工位档下 <figure> 恰好填 deskSpec.crt.screen（canvas 的 bezel
+ * 留在四周，4px 插画壳由 Hero.astro 的 .hero--desk 覆盖退场）；窄屏居中栈档
+ * 保留 4px accent 插画壳（线语言豁免，tests/unit/line-hierarchy.spec.ts）。
+ */
+import { getPublishedPosts, formatDate } from '../lib/posts';
+
+type Item = { cmd: string } | { out: string[] };
+
+const posts = await getPublishedPosts();
+const latest = posts[0];
+const recent = posts.slice(0, 3).map((p) => `${formatDate(p.data.date).slice(5)} ${p.id}.md`);
+
+/** 四个命令剧本（round 05 作者裁决：全部上线，随机轮播）。行宽 ≤26 字符
+    （屏矩形 176px − 内衬 20px = 156px ÷ Zpix 半宽 6px），超宽自动换行会破相。 */
+const SCRIPTS: Item[][] = [
+  [
+    { cmd: 'ls posts/' },
+    { out: recent },
+    { cmd: 'git log --oneline' },
+    { out: ['6675307 docs: oil-ui', 'f4cc635 pixel-icons'] },
+    { cmd: 'npm run build' },
+    { out: ['✓ build ok · 775ms'] },
+  ],
+  [
+    { cmd: 'pipe run daily-sync' },
+    { out: ['[1/3] extract 1284', '[2/3] transform ok', '[3/3] load 2.4s'] },
+    { cmd: 'pipe status' },
+    { out: ['✓ all green · 06:00'] },
+  ],
+  [
+    { cmd: 'cat now.md' },
+    { out: ['正在写：终端进 CRT 屏'] },
+    { cmd: 'npm run build' },
+    { out: [`✓ ${posts.length} posts · 1 new`] },
+    { cmd: 'git push origin main' },
+    { out: ['✓ deployed · 12s'] },
+  ],
+  [
+    { cmd: 'curl 8bit.me/posts|wc -l' },
+    { out: [`${posts.length}`] },
+    { cmd: 'stat posts -t|head -1' },
+    { out: [`update: ${latest ? formatDate(latest.data.date) : '----'}`] },
+    { cmd: 'uptime' },
+    { out: [`night · ${posts.length} posts`] },
+  ],
+];
+
+/** 无 JS 兜底文本 = 剧本 A 的完整转写 */
+const fallback = SCRIPTS[0]
+  .map((it) => ('cmd' in it ? `$ ${it.cmd}` : (it as { out: string[] }).out.join('\n')))
+  .join('\n');
+---
+
+<figure class="term" data-term data-scripts={JSON.stringify(SCRIPTS)} aria-hidden="true">
+  <div class="term-win">
+    <div class="term-titlebar">
+      <span class="term-dots"><i class="d-r"></i><i class="d-y"></i><i class="d-g"></i></span>
+      <span class="term-title">matt@8bit-me: ~</span>
+    </div>
+    <div class="term-body" data-screen><pre class="term-fallback">{fallback}<span class="term-caret"></span></pre></div>
+    <div class="term-status"><span>zsh · 80×19</span><span>8bit.me · night</span></div>
+  </div>
+</figure>
+
+<style>
+  /* 插画壳：4px var(--c-accent) 边框 + 4/8 两阶 chip 阴影（同 .pixel-panel / .pixel-btn）。
+     边框挂在 figure 上：桌面档被 Hero 的 .hero--desk 覆盖退场（canvas bezel 顶替）。 */
+  .term {
+    margin: 0;
+    display: inline-flex;
+    border: 4px solid var(--c-accent);
+    box-shadow:
+      4px 4px 0 color-mix(in srgb, var(--c-line) 80%, transparent),
+      8px 8px 0 color-mix(in srgb, var(--c-line) 55%, transparent);
+  }
+
+  /* 终端窗口：标题栏 / 内容区 / 状态栏三段，填满屏幕矩形（176×156 逻辑基准） */
+  .term-win {
+    display: flex;
+    flex-direction: column;
+    width: 176px;
+    height: 156px;
+  }
+
+  .term-titlebar {
+    flex: 0 0 22px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    background: var(--c-panel);
+    border-bottom: 1px solid var(--c-line);
+  }
+  .term-dots {
+    display: flex;
+    gap: 4px;
+  }
+  .term-dots i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+  }
+  .d-r { background: var(--c-accent); }
+  .d-y { background: var(--c-text); opacity: 0.75; }
+  .d-g { background: var(--c-line); }
+  .term-title {
+    font-family: var(--font-pixel);
+    font-size: 0.75rem; /* 12px：八档 whitelist 最小档；Zpix 半宽 6px，标题 15 字符仍装得下 */
+    line-height: 1rem; /* 16px，4px 阶（12→16 配对） */
+    letter-spacing: normal;
+    opacity: 0.85;
+  }
+
+  /* 内容区 = 磷面，敲键区。overflow hidden + 裁剪滚动：布局零位移。 */
+  .term-body {
+    flex: 1 1 auto;
+    overflow: hidden;
+    padding: 8px 10px;
+    background-color: var(--c-bg);
+    color: var(--c-text);
+    font-family: var(--font-pixel);
+    font-size: 0.75rem; /* 12px：Zpix 半宽 6px/字符，整数前进量 */
+    line-height: 1.25rem; /* 20px，4px 阶 */
+    text-align: left;
+  }
+
+  .term-fallback {
+    margin: 0;
+    font-family: inherit;
+    line-height: inherit;
+    white-space: pre;
+  }
+
+  .term-status {
+    flex: 0 0 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    background: var(--c-panel);
+    border-top: 1px solid var(--c-line);
+    font-family: var(--font-pixel);
+    /* 0.625em = 10px：屏内丝印档——176px 插画盒内文字随盒设计（em 档），
+       0.75rem 会撑爆状态栏（「zsh · 80×19」+「8bit.me · night」≈ 189px） */
+    font-size: 0.625em;
+    line-height: 0.75rem; /* 12px，4px 阶 */
+    letter-spacing: normal;
+    opacity: 0.8;
+  }
+
+</style>
+
+<!-- 运行时注入元素（轮播 JS 创建的 .line / .term-caret 等）拿不到 Astro 的
+     data-astro-cid 属性，scoped 样式对它们全部失效（2026-10-03 P0② 实锤：
+     28 字符输出行换行破相、光标运行时裸奔、提示符丢 accent 金）。这组样式
+     以 [data-term] 后代选择器全局注入；类名为组件私有，零冲突面。 -->
+<style is:global>
+  [data-term] .line {
+    white-space: pre;
+    min-height: 1.25rem;
+  }
+  [data-term] .line-out {
+    opacity: 0.88;
+  }
+  [data-term] .line-prompt {
+    color: var(--c-accent);
+  }
+
+  /* 块状光标：与 .tw-caret 同拍（1s steps(2, start)），accent 窗灯金。
+     默认闪烁；敲键时脚本挂 .solid 常亮（真终端习惯），回车摘除。 */
+  [data-term] .term-caret {
+    display: inline-block;
+    width: 7px;
+    height: 12px;
+    margin-left: 1px;
+    vertical-align: -2px;
+    background: var(--c-accent);
+    animation: term-blink 1s steps(2, start) infinite;
+  }
+  [data-term] .term-caret.solid {
+    animation: none;
+  }
+
+  @keyframes term-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  /* reduced-motion：全局块把闪烁压成 0.01ms 单次，steps(2, start) 会让光标
+     停在熄灭相不可见——这里显式关掉动画，光标恒常显（确定性可见）。 */
+  @media (prefers-reduced-motion: reduce) {
+    [data-term] .term-caret {
+      animation: none !important;
+    }
+  }
+</style>
+
+<script>
+  // 终端轮播：随机起播一个剧本 → 敲命令（55ms/字，敲时光标常亮）→ 回车 →
+  // 输出 60ms/行级联 → 剧本尾补空提示符（闪烁）→ 停 4.2s → 随机挑下一个
+  // （不连续重复）→ 清屏重来。满屏时旧行滚出（scrollHeight 裁剪）。
+  function bootTerminal() {
+    const root = document.querySelector<HTMLElement>('[data-term]');
+    const body = document.querySelector('#hero .term-body');
+    if (!root || !body) return;
+    const scripts: Array<Array<{ cmd?: string; out?: string[] }>> = JSON.parse(
+      root.dataset.scripts ?? '[]'
+    );
+    if (!scripts.length) return;
+
+    // 起播随机、下一部随机且不连续重复（作者裁决：随机播放完一个再随机下一个）
+    let current = Math.floor(Math.random() * scripts.length);
+
+    const play = () => {
+      body.textContent = '';
+      const items = scripts[current]!;
+      let si = 0;
+      let lineEl: HTMLDivElement | null = null;
+      let cmdEl: HTMLSpanElement | null = null;
+      let caret: HTMLSpanElement | null = null;
+
+      const newPrompt = () => {
+        lineEl = document.createElement('div');
+        lineEl.className = 'line';
+        const prompt = document.createElement('span');
+        prompt.className = 'line-prompt';
+        prompt.textContent = '$ ';
+        cmdEl = document.createElement('span');
+        caret = document.createElement('span');
+        caret.className = 'term-caret';
+        lineEl.append(prompt, cmdEl, caret);
+        body.append(lineEl);
+        trim();
+      };
+      const trim = () => {
+        while (body.scrollHeight > body.clientHeight + 1 && body.firstElementChild !== lineEl) {
+          body.firstElementChild!.remove();
+        }
+      };
+      const idleBlink = (on: boolean) => caret!.classList.toggle('solid', !on);
+
+      const step = () => {
+        if (si >= items.length) {
+          newPrompt(); // 剧本尾：空提示符，闪烁光标（等待输入状态）
+          setTimeout(() => {
+            current = (current + 1 + Math.floor(Math.random() * (scripts.length - 1))) % scripts.length;
+            play();
+          }, 4200);
+          return;
+        }
+        const item = items[si++]!;
+        if (item.cmd !== undefined) {
+          newPrompt();
+          idleBlink(false); // 敲键时光标常亮
+          let ci = 0;
+          const typeKey = () => {
+            ci += 1;
+            cmdEl!.textContent = item.cmd!.slice(0, ci);
+            if (ci < item.cmd!.length) {
+              setTimeout(typeKey, 55);
+            } else {
+              caret!.remove(); // 回车：光标随手摘掉，不留残影
+              setTimeout(step, 300);
+            }
+          };
+          typeKey();
+        } else {
+          idleBlink(true);
+          let oi = 0;
+          const printOut = () => {
+            const div = document.createElement('div');
+            div.className = 'line line-out';
+            div.textContent = item.out![oi]!;
+            body.append(div);
+            trim();
+            oi += 1;
+            if (oi < item.out!.length) setTimeout(printOut, 60);
+            else setTimeout(step, 350);
+          };
+          printOut();
+        }
+      };
+      setTimeout(step, 500);
+    };
+
+    // 起播即清掉无 JS 兜底（JS 活着 = 轮播接管）
+    play();
+  }
+
+  // hero 顶对齐进视口才起播（工位住第二章，首屏是整扇窗，ADR-0027）
+  const hero = document.getElementById('hero');
+  if (hero && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          io.disconnect();
+          bootTerminal();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    io.observe(hero);
+  } else {
+    bootTerminal();
+  }
+</script>

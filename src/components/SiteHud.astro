@@ -1,0 +1,103 @@
+---
+/**
+ * SiteHud —— 右下常驻像素挂件（homepage-optimization-v1 · B1，2026-10-01 作者批准）。
+ *
+ * adamho 的 HUD 手法：像素锁进右下小盒、正文区完全干净；数据绑真实内容
+ * （文章数 → LOG n + 离散进度条；最新文章日期 → UPDATED），键用 Zpix 丝印语言。
+ * 非交互：pointer-events none、无 sfx、无动画（reduced-motion 天然合规）。
+ * 数据与 about .meta / hero 站况读数同一条链（BaseLayout 传入）。
+ * 数学在 src/lib/site-hud.ts（纯函数，单测锁）；e2e：tests/e2e/site-hud.spec.ts。
+ */
+import { HUD_BAR_CELLS, hudBarCells } from '../lib/site-hud';
+
+interface Props {
+  /** 已发布文章数（getPublishedPosts().length） */
+  count: number;
+  /** 最新文章日期丝印（formatDate，如 2026-09-26） */
+  updated: string;
+}
+
+const { count, updated } = Astro.props;
+const filled = hudBarCells(count);
+const cells = Array.from({ length: HUD_BAR_CELLS }, (_, i) => i < filled);
+---
+
+<aside class="site-hud" aria-hidden="true">
+  <p class="hud-line text-pixel">LOG {count}</p>
+  <div class="hud-bar">
+    {cells.map((on) => <span class:list={['hud-cell', { on }]}></span>)}
+  </div>
+  <p class="hud-line text-pixel">UPDATED {updated}</p>
+</aside>
+
+<script is:inline>
+  // 首屏门控（parse 期挂类，先于首帧，杜绝闪现）：首页 #window 在视口内时挂件退场
+  // —— ADR-0027「首屏是整扇窗、零文字」是守线（tests/e2e/nav-links.spec.ts），
+  // 挂件「常驻」指离开窗之后的每一屏。无 #window 的页面不挂类、照常显示。
+  if (document.getElementById('window')) {
+    var _hud = document.querySelector('.site-hud');
+    if (_hud) _hud.classList.add('site-hud--hold');
+  }
+</script>
+<script>
+  // 滚动比对跟随（站内习惯用法，同 index 视差 / SectionFx——IO 对滚动的触发
+  // 在实测里不稳，spec 明确弃 IO 取 scroll）：#window 下缘还在视口内（bottom>0）
+  // → 保持退场；整扇滚出 → 出现。toggle 同值 no-op，滚动热路径零成本。
+  const hud = document.querySelector<HTMLElement>('.site-hud');
+  const win = document.getElementById('window');
+  if (hud && win) {
+    const tick = (): void => {
+      hud.classList.toggle('site-hud--hold', win.getBoundingClientRect().bottom > 0);
+    };
+    addEventListener('scroll', tick, { passive: true });
+    addEventListener('resize', tick);
+    tick();
+  }
+</script>
+
+<style>
+  .site-hud {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 30; /* Nav 40 之下；非交互层，pointer-events 放行给下层 */
+    pointer-events: none;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--c-line) 40%, transparent);
+    background: var(--c-bg);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .hud-line {
+    margin: 0;
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    color: var(--color-text-dim);
+  }
+  /* 进度条：10 整数格（8px 格 + 2px 缝），实心 = accent，空格 = 线色 40%。
+     离散格是像素语言——不用百分比平滑填充。 */
+  .hud-bar {
+    display: flex;
+    gap: 2px;
+  }
+  .hud-cell {
+    width: 8px;
+    height: 8px;
+    background: color-mix(in srgb, var(--c-line) 40%, transparent);
+  }
+  .hud-cell.on {
+    background: var(--c-accent);
+  }
+  /* 首屏门控：#window 在视口内时退场（inline 脚本 parse 期挂类，IO 随滚动切换） */
+  .site-hud--hold {
+    display: none;
+  }
+  /* 窄屏退场（提案 §2-B1）：小屏右下角是阅读动线，挂件让位 */
+  @media (max-width: 899px) {
+    .site-hud {
+      display: none;
+    }
+  }
+</style>

@@ -1,0 +1,23 @@
+---
+/**
+ * 首屏 = 一整扇窗（作者 2026-09-26 裁决：「首页是整个窗，hero 挪到下一章」）。
+ *
+ * 这一屏**没有 DOM 内容**：墙、窗框、窗外世界、天气全在 BgFx 的 canvas 上画。
+ * 站点标题 / 说明 / 按钮 / 工位全部下移到下一章 `#hero`（原 hero 内容整体后移一章）。
+ *
+ * `id="window"` 是「世界只住这一屏」的锚点，被三处消费：
+ * ① `BgFx.drawWorld` 按它的可见度算 `worldAlpha`（窗、景、天气裁剪的 alpha 门）；
+ * ② `.bgfx-scrim` 的顶边 = 它的底边（文档坐标，实测，不写 100vh）；
+ * ③ 章节切换转场（ADR-0026）把它当第 0 章（首炮 = window→hero）。
+ */
+---
+
+<section id="window" class="window-screen" aria-label="窗外世界"></section>
+
+<style>
+  /* 只负责占满一屏：任何几何都不在这里推导（窗几何的唯一数据源是 window-room.ts） */
+  .window-screen {
+    position: relative;
+    min-height: 100dvh;
+  }
+</style>

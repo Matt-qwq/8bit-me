@@ -1,0 +1,98 @@
+---
+/**
+ * 按标签浏览（roadmap P2-3 第二种内容视图）—— 纯静态、零 JS、零新线元素。
+ *
+ * 数据层只收录 ≥2 篇的标签（getTagRoutes 的默认门槛）：P2-3 原前提是「≥30 篇再做」，
+ * 理由是内容少时按标签浏览会全是单篇标签。门槛守住的正是那个理由，
+ * 于是不必等篇数，视图也不会变薄。禁用图谱式连线（拆解报告 §5.1 的告诫）：
+ * 这里只有列表与既有标签芯片，没有任何连接线。
+ */
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { getPublishedPosts } from '../../../lib/posts';
+import { getTagRoutes } from '../../../lib/posts';
+import { siteConfig, url } from '../../../lib/config';
+
+const posts = await getPublishedPosts();
+const tags = getTagRoutes(posts);
+const total = tags.reduce((sum, t) => sum + t.count, 0);
+const title = `标签 | ${siteConfig.title}`;
+const description = `按标签浏览文章：${tags.length} 个标签、覆盖 ${total} 篇。`;
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="container">
+    <h1 class="section-title">
+      <span class="num text-pixel">T</span><span class="text-pixel">TAGS</span> 按标签浏览
+    </h1>
+
+    <nav class="back-row">
+      <a class="back text-pixel" href={url('blog/')} data-sfx-role="nav">&larr; 回文章列表</a>
+    </nav>
+
+    <div class="pixel-panel">
+      <p class="lede">
+        共 {tags.length} 个标签，覆盖 {total} 篇。只列出出现两次以上的标签——
+        只出现一次的标签不构成「一类」，列出来只是死链。
+      </p>
+      <ul class="tag-list">
+        {tags.map((t) => (
+          <li>
+            <a class="tag-link" href={url(`blog/tags/${t.slug}/`)} data-sfx-role="nav" data-sfx-hover>
+              <span class="tag text-pixel">{t.tag}</span>
+              <span class="tag-count text-pixel">{t.count}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .back-row {
+    margin: 0 0 1rem;
+  }
+  .back {
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    color: var(--color-text-dim);
+    text-decoration: none;
+  }
+  .lede {
+    margin: 0 0 1.25rem;
+    color: var(--color-text-dim);
+  }
+  /* 网格卡片而非长列表：标签宽度不一，网格让「扫描」比「逐行读」快 */
+  .tag-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 0.75rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .tag-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    text-decoration: none;
+  }
+  /* 通电态：复用站点的「物理反馈」语言（2px 强调描边 + 底边加亮），不引新色。
+     标签芯片在别处是**非交互**的（.tag 只做标记），这里的芯片是链接，
+     所以必须给出可点反馈——否则与静态芯片无从区分。
+     焦点环不在这里写：全局 `a:focus-visible` 已给 3px --c-text 描边，本地覆写只会造成不一致。 */
+  .tag-link:hover .tag,
+  .tag-link:focus-visible .tag {
+    border-color: var(--c-accent);
+    box-shadow: inset 0 -3px 0 var(--c-accent);
+  }
+  /* 计数用结构色（不是强调色）：数字是读数，不是可点目标 */
+  .tag-count {
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    color: var(--color-text-dim);
+  }
+</style>

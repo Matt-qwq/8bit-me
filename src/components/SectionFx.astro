@@ -1,0 +1,349 @@
+---
+/**
+ * SectionFx —— 章节切换·抖动溶解转场（**仅 index 页挂载**）
+ * 规格：docs/specs/section-trans-v1.md / ADR-0026。
+ *
+ * 覆盖层 = fixed canvas，z 90：盖 Nav(40)/SideDock(70)、在 Konami(100)/CursorFx(110) 之下，
+ * pointer-events:none（全程不劫持滚动、零布局位移）。纯逻辑在 src/lib/section-trans.ts，
+ * 这里只做三件事：滚动检测（rAF 节流比对 section offsetTop）→ 放炮接线 → 按实时
+ * 「两章可见带」裁剪绘制。仪式只在激活章换班时存在，其余时间画布全透明、runtime 停帧。
+ */
+---
+
+<div class="section-fx" aria-hidden="true"><canvas id="sectionfx-canvas"></canvas></div>
+
+<script>
+  import { createFxRuntime, type FxRuntimeHost } from '../lib/fx-runtime';
+  import { lerpHex } from '../lib/sky-palette';
+  import {
+    CELL_FLASH,
+    CELL_VEIL,
+    SECTION_TRANS,
+    alive,
+    hash32,
+    isFullCeremony,
+    makeCeremony,
+    reanchor,
+    shouldFire,
+    step,
+    type BandRect,
+    type Ceremony,
+    type CeremonyRects,
+  } from '../lib/section-trans';
+
+  const canvas = document.getElementById('sectionfx-canvas') as HTMLCanvasElement | null;
+  const sections = Array.from(
+    document.querySelectorAll<HTMLElement>('main#main > section[id]')
+  );
+  if (canvas && sections.length > 1) start(canvas, sections);
+  else canvas?.remove();
+
+  function start(canvas: HTMLCanvasElement, sections: HTMLElement[]): void {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      canvas.remove();
+      return;
+    }
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    /** 激活章判定线：视口中线（章节边界扫过它 = 换班；比 IO 稳、可取消） */
+    const ACT = 0.5;
+
+    let w = 0;
+    let h = 0;
+    let ceremony: Ceremony | null = null;
+    let fromIdx = -1;
+    let toIdx = -1;
+    let active = -1;
+    let booted = false;
+    let firedOnce = false;
+    let lastFired = Number.NEGATIVE_INFINITY;
+    let pending: { from: number; to: number } | null = null;
+    let pendingTimer = 0;
+    let lastTs = 0;
+    let lastScrollY = 0;
+    let bodyBreak = '';
+    let bodyGather = '';
+
+    const tops: number[] = [];
+    const heights: number[] = [];
+
+    /** 量一次各章的文档几何（滚动 tick 时刷新；5 次只读 rect，不写样式） */
+    function measure(): void {
+      for (let i = 0; i < sections.length; i++) {
+        const r = sections[i]!.getBoundingClientRect();
+        tops[i] = r.top + window.scrollY;
+        heights[i] = r.height;
+      }
+    }
+
+    /** 激活章 = 最后一个「顶已越过视口中线」的章 */
+    function activeIndex(): number {
+      const line = window.scrollY + h * ACT;
+      let idx = 0;
+      for (let i = 0; i < tops.length; i++) if (tops[i]! <= line) idx = i;
+      return idx;
+    }
+
+    /** 可见带（裁剪到视口） */
+    function band(i: number, sy: number): BandRect {
+      return {
+        y0: Math.max(0, tops[i]! - sy),
+        y1: Math.min(h, tops[i]! + heights[i]! - sy),
+      };
+    }
+
+    /** 放炮那一刻的真实滚动几何：两章可见带 + 起源线（后一章的顶） */
+    function bandRects(a: number, b: number): CeremonyRects | null {
+      const sy = window.scrollY;
+      const from = band(a, sy);
+      const to = band(b, sy);
+      if (from.y1 - from.y0 <= 0 && to.y1 - to.y0 <= 0) return null;
+      const lower = Math.max(a, b);
+      const originY = Math.max(0, Math.min(h, tops[lower]! - sy));
+      return { w, h, from, to, originY };
+    }
+
+    /** 绘制用的**实时**覆盖带 = from 章可见带 ∪ to 章可见带 */
+    function liveCover(): BandRect | null {
+      if (fromIdx < 0 || toIdx < 0) return null;
+      const sy = window.scrollY;
+      const a = band(fromIdx, sy);
+      const b = band(toIdx, sy);
+      const y0 = Math.min(a.y0, b.y0);
+      const y1 = Math.max(a.y1, b.y1);
+      return y1 - y0 > 0 ? { y0, y1 } : null;
+    }
+
+    function buildBodies(p: { bg: string; light: string; accent: string }): void {
+      bodyBreak = lerpHex(p.bg, p.light, SECTION_TRANS.BODY_MIX);
+      bodyGather = lerpHex(p.bg, p.accent, SECTION_TRANS.BODY_MIX);
+    }
+
+    const host: FxRuntimeHost = {
+      getSize: () => ({ width: window.innerWidth, height: window.innerHeight }),
+      shouldRun: () => alive(ceremony),
+      frame: (c) => {
+        const st = ceremony;
+        if (!st) return;
+        const now = performance.now();
+        // 仪式长在滚动上：先把几何重锚到**当前**滚动（波心跟着两章可见带走、
+        // 起源线跟着边界走），再把本帧滚动量当作推进项——快滚被压缩。
+        const sy = window.scrollY;
+        const live = bandRects(fromIdx, toIdx);
+        if (live) reanchor(st, live);
+        const dScroll = sy - lastScrollY;
+        lastScrollY = sy;
+        step(st, lastTs > 0 ? now - lastTs : 16, dScroll);
+        lastTs = now;
+        if (!alive(st)) {
+          c.clearRect(0, 0, w, h);
+          ceremony = null;
+          fromIdx = -1;
+          toIdx = -1;
+          rt.sync();
+          return;
+        }
+        draw(c, st);
+      },
+      onTheme: (p) => {
+        palette = p;
+        buildBodies(p);
+      },
+      onResize: ({ width, height }) => {
+        w = width;
+        h = height;
+      },
+    };
+    const rt = createFxRuntime(canvas, host);
+    let palette = rt.palette;
+    buildBodies(palette);
+    rt.resize();
+    measure();
+    active = activeIndex();
+    booted = true;
+
+    /** 本帧绘制：格本体 + 1 帧闪格（压在身体之上），按实时覆盖带裁剪 */
+    function draw(c: CanvasRenderingContext2D, st: Ceremony): void {
+      c.clearRect(0, 0, w, h);
+      c.globalCompositeOperation = 'source-over';
+      c.globalAlpha = 1;
+      const cover = liveCover();
+      if (!cover) return;
+      const isBreak = st.phase === 'break';
+      // 格本体色：仅聚开场就是暖暗；完整双阶段在聚的前 WARM_UP 段把冷暗渐变到暖暗
+      // （不做的话破→聚 是整屏一帧换色，读作“闪了两下”而不是一次溶解）
+      const warm = isBreak ? 0 : st.full ? Math.min(1, st.progress / SECTION_TRANS.WARM_UP) : 1;
+      const body = warm <= 0 ? bodyBreak : warm >= 1 ? bodyGather : lerpHex(bodyBreak, bodyGather, warm);
+      const cells = st.cells;
+      const r0 = Math.max(0, Math.floor(cover.y0 / st.cell));
+      const r1 = Math.min(st.rows - 1, Math.ceil(cover.y1 / st.cell) - 1);
+      c.save();
+      c.beginPath();
+      c.rect(0, cover.y0, w, cover.y1 - cover.y0);
+      c.clip();
+      c.fillStyle = body;
+      fillRuns(c, cells, r0, r1, CELL_VEIL, st);
+      c.fillStyle = isBreak ? palette.light : palette.accent;
+      fillRuns(c, cells, r0, r1, CELL_FLASH, st);
+      c.restore();
+      if (st.full && st.phase === 'gather') drawBeam(c, st);
+    }
+
+    /** 逐行游程填充：连续同态格合并成一个 fillRect（窄屏格多时是 10 倍级的省） */
+    function fillRuns(
+      c: CanvasRenderingContext2D,
+      cells: Uint8Array,
+      r0: number,
+      r1: number,
+      state: number,
+      st: Ceremony
+    ): void {
+      for (let r = r0; r <= r1; r++) {
+        const y = r * st.cell;
+        const base = r * st.cols;
+        let start = -1;
+        for (let col = 0; col <= st.cols; col++) {
+          const on = col < st.cols && cells[base + col] === state;
+          if (on && start < 0) start = col;
+          else if (!on && start >= 0) {
+            c.fillRect(start * st.cell, y, (col - start) * st.cell, st.cell);
+            start = -1;
+          }
+        }
+      }
+    }
+
+    /** 光束签名：2px accent 整齿横扫一次（起源线上；向下滚左→右，向上滚反向） */
+    function drawBeam(c: CanvasRenderingContext2D, st: Ceremony): void {
+      const y = Math.round(st.originY);
+      if (y < -SECTION_TRANS.BEAM_H || y > h) return;
+      const teeth = Math.max(1, Math.round(w / SECTION_TRANS.BEAM_TOOTH));
+      const span = Math.round(st.beam * teeth) * SECTION_TRANS.BEAM_TOOTH;
+      if (span <= 0) return;
+      c.fillStyle = palette.accent;
+      c.fillRect(st.dir > 0 ? 0 : w - span, y, span, SECTION_TRANS.BEAM_H);
+    }
+
+    function clearCanvas(): void {
+      ctx!.clearRect(0, 0, w, h);
+    }
+
+    function cancelCeremony(): void {
+      if (!ceremony) return;
+      ceremony = null;
+      fromIdx = -1;
+      toIdx = -1;
+      clearCanvas();
+      rt.sync();
+    }
+
+    /** 放一炮：from 取 to 的邻章（快滚跨多章也只画相邻那条边界） */
+    function fire(rawFrom: number, rawTo: number): void {
+      const to = Math.max(0, Math.min(sections.length - 1, rawTo));
+      const from =
+        rawTo > rawFrom
+          ? Math.max(0, to - 1)
+          : Math.min(sections.length - 1, to + 1);
+      if (from === to) return;
+      measure();
+      const rects = bandRects(from, to);
+      if (!rects) return;
+      const fromId = sections[from]!.id;
+      const toId = sections[to]!.id;
+      const dir: 1 | -1 = to > from ? 1 : -1;
+      ceremony = makeCeremony(
+        fromId,
+        toId,
+        dir,
+        rects,
+        hash32(fromId, toId),
+        isFullCeremony(firedOnce, fromId, toId)
+      );
+      fromIdx = from;
+      toIdx = to;
+      firedOnce = true;
+      lastFired = performance.now();
+      lastTs = 0;
+      lastScrollY = window.scrollY;
+      pending = null;
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        pendingTimer = 0;
+      }
+      rt.sync();
+    }
+
+    /** 激活章换班：够间隔就放炮；不够就取消进行中的一场、把最新目标挂起 */
+    function onChapter(prev: number, cur: number): void {
+      if (reduced.matches) {
+        pending = null;
+        return;
+      }
+      const now = performance.now();
+      const prevId = sections[prev]?.id ?? null;
+      const curId = sections[cur]?.id ?? null;
+      if (shouldFire(prevId, curId, now, lastFired, false)) {
+        fire(prev, cur);
+        return;
+      }
+      cancelCeremony();
+      pending = { from: prev, to: cur };
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(() => {
+        pendingTimer = 0;
+        const p = pending;
+        pending = null;
+        if (!p || reduced.matches || p.to !== active) return;
+        fire(p.from, p.to);
+      }, Math.max(0, SECTION_TRANS.MIN_GAP - (now - lastFired)) + 1);
+    }
+
+    let raf = 0;
+    function tick(): void {
+      raf = 0;
+      measure();
+      const cur = activeIndex();
+      if (!booted) {
+        // 入场零炮：首帧只认账，不放炮（hash 直落某章也不放）
+        active = cur;
+        booted = true;
+        return;
+      }
+      if (cur === active) return;
+      const prev = active;
+      active = cur;
+      onChapter(prev, cur);
+    }
+    function onScroll(): void {
+      if (!raf) raf = requestAnimationFrame(tick);
+    }
+
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onScroll, { passive: true });
+    document.fonts?.ready.then(onScroll);
+    // 调试钩子（DEV 才挂；生产不暴露）——看图时手动放炮用
+    if (import.meta.env.DEV) {
+      (window as unknown as Record<string, unknown>).__sectionFx = {
+        fire: (from: number, to: number) => fire(from, to),
+        state: () => ceremony,
+      };
+    }
+  }
+</script>
+
+<style>
+  .section-fx {
+    /* fixed 覆盖层：内容之上（盖 Nav/SideDock）、CursorFx 之下；不参与布局、不挡指针 */
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .section-fx canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+</style>

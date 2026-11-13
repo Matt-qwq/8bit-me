@@ -1,0 +1,120 @@
+---
+/**
+ * 标签详情（roadmap P2-3）—— 纯静态、零 JS、零新线元素。
+ *
+ * `getStaticPaths` 直接消费 `getTagRoutes`，与索引页共用同一份 slug，
+ * 保证「索引页列出的链接」与「真实生成的路由」不可能分叉。
+ *
+ * 视图选择：**不复用列表页的时间线**。时间线的几何（总线 / 分支 / 焊盘）
+ * 是列表页的专有语言，复制一份到别处＝多一套要同步的线元素。这里只用一个面板
+ * 装「标题 + 日期 + 摘要」三行，线与面全部来自既有构件（.pixel-panel / .tag）。
+ */
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { getPublishedPosts, getTagRoutes, formatDate } from '../../../lib/posts';
+import { siteConfig, url } from '../../../lib/config';
+
+export async function getStaticPaths() {
+  const posts = await getPublishedPosts();
+  return getTagRoutes(posts).map((t) => ({
+    params: { tag: t.slug },
+    props: {
+      tag: t.tag,
+      items: posts
+        .filter((p) => p.data.tags.includes(t.tag))
+        .map((post) => ({
+          href: url(`blog/${post.id}`),
+          title: post.data.title,
+          description: post.data.description,
+          iso: formatDate(post.data.date),
+        })),
+    },
+  }));
+}
+
+const { tag, items } = Astro.props as {
+  tag: string;
+  items: { href: string; title: string; description: string; iso: string }[];
+};
+
+const title = `${tag} | ${siteConfig.title}`;
+const description = `标签「${tag}」下的 ${items.length} 篇文章。`;
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="container">
+    <h1 class="section-title">
+      <span class="num text-pixel">#</span><span class="text-pixel">TAG</span> {tag}
+    </h1>
+
+    <nav class="back-row">
+      <a class="back text-pixel" href={url('blog/tags/')} data-sfx-role="nav">&larr; 全部标签</a>
+    </nav>
+
+    <div class="pixel-panel">
+      <p class="lede">这个标签下有 {items.length} 篇，按日期倒序。</p>
+      <ul class="tagged">
+        {items.map((it) => (
+          <li>
+            <time class="date text-pixel" datetime={it.iso}>{it.iso}</time>
+            <h2 class="item-title">
+              <a href={it.href} data-sfx-role="nav" data-sfx-hover>{it.title}</a>
+            </h2>
+            <p class="desc">{it.description}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .back-row {
+    margin: 0 0 1rem;
+  }
+  .back {
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    color: var(--color-text-dim);
+    text-decoration: none;
+  }
+  .lede {
+    margin: 0 0 1.25rem;
+    color: var(--color-text-dim);
+  }
+  .tagged {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  /* 条目之间用间距分组，不划线（新线元素要登记，间距不需要） */
+  .tagged > li + li {
+    margin-top: 1.5rem;
+  }
+  .date {
+    display: block;
+    font-size: 0.75rem;
+    letter-spacing: var(--ls-12);
+    line-height: 16px;
+    color: var(--color-text-dim);
+    margin-bottom: 0.25rem;
+  }
+  /* 条目标题是 h2：页面 h1 已被页标题占用，条目用 h2 保持「每页唯一 h1」契约 */
+  .item-title {
+    font-size: 1rem;
+    line-height: 24px;
+    letter-spacing: var(--ls-16);
+    margin: 0 0 0.5rem;
+  }
+  .item-title a {
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .desc {
+    color: var(--color-text-dim);
+    font-size: 0.875rem;
+    letter-spacing: normal;
+    line-height: 24px;
+    margin: 0;
+  }
+</style>

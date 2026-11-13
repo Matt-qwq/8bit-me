@@ -1,0 +1,183 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { LAB_DIAGRAMS, artifactPath, findLabDiagram } from '../../lib/lab';
+import { siteConfig, url } from '../../lib/config';
+import { DEFAULT_MODE } from '../../lib/themes';
+
+/**
+ * 图册单页 —— 站内壳 + iframe 里的 archify viewer
+ *
+ * 为什么用 iframe 而不是把 viewer 内联进来：
+ *   archify 产物是自带的 640 KB / 4 个 <script> 的独立文档（pan/zoom/搜索/导出）。
+ *   内联会把它的样式与运行时灌进本站文档，全站零外部脚本、单媒介的约定就废了。
+ *   iframe 给的是**文档级隔离**：它碰不到本站 DOM/CSS，本站也碰不到它，
+ *   出问题最多是这一格坏，其余页面照旧。代价只有「跨文档要手动同步主题」这一条。
+ *
+ * 主题同步为什么非做不可：
+ *   跨文档不继承 CSS 变量，iframe 读不到 --c-*。若不传，本站切模式时图会停在旧配色，
+ *   变成第三套观感——正是「单媒介种子」要禁的。
+ *   机制与 CursorFx 同构：主题构建期静态注入（UI 恒暗，不再热同步）。
+ */
+export function getStaticPaths() {
+  return LAB_DIAGRAMS.map((d) => ({ params: { id: d.id } }));
+}
+
+const { id } = Astro.params;
+const diagram = findLabDiagram(id ?? '');
+
+// LAB_DIAGRAMS 与 getStaticPaths 同源，正常取不到即为开发期数据错
+if (!diagram) throw new Error(`/lab/${id} 没有对应图 —— 检查 src/lib/lab.ts`);
+
+const artifact = url(artifactPath(diagram.id));
+const title = `${diagram.title} | ${siteConfig.title}`;
+---
+
+<BaseLayout title={title} description={diagram.summary}>
+  <div class="container">
+    <p class="lab-crumb">
+      <a class="text-pixel" href={url('lab/')} data-sfx-role="nav" data-sfx-hover>&larr; 实验场</a>
+    </p>
+
+    <h1 class="section-title">
+      <span class="num text-pixel">L</span><span class="text-pixel">LAB</span> {diagram.title}
+    </h1>
+
+    <p class="lab-lede">{diagram.summary}</p>
+  </div>
+
+  {/* 舞台单独一层容器：图内 12px 字要拿到 ~1150px 才不被缩成 11px 以下，
+      --w-wide（896px）不够，所以这里跳出正文列。见下方 .lab-wide 注释。 */}
+  <div class="lab-wide">
+    <div class="lab-stage pixel-panel">
+      {/* src 由下面的脚本注入：初始模式存在 localStorage，构建期无从得知，
+          写死会先闪一帧错配色。data-artifact 留真实地址，无 JS 时 noscript 兜底可直达。 */}
+      <iframe
+        class="lab-frame"
+        title={`${diagram.title}（交互式图，可拖动缩放）`}
+        data-artifact={artifact}
+        loading="eager"
+      ></iframe>
+
+      <noscript>
+        <p class="lab-fallback">
+          交互图需要 JavaScript。<a href={artifact}>直接打开这张图 &rarr;</a>
+        </p>
+      </noscript>
+    </div>
+  </div>
+
+  <div class="container">
+    <p class="lab-meta">
+      <a class="text-pixel" href={artifact} target="_blank" rel="noopener" data-sfx-role="nav" data-sfx-hover>
+        在新标签页打开 &nearr;
+      </a>
+      {
+        diagram.post && (
+          <>
+            {' · '}
+            <a
+              class="text-pixel"
+              href={url(`blog/${diagram.post}/`)}
+              data-sfx-role="nav"
+              data-sfx-hover
+            >
+              读配套文章 &rarr;
+            </a>
+          </>
+        )
+      }
+    </p>
+  </div>
+</BaseLayout>
+
+<script is:inline define:vars={{ fallbackTheme: DEFAULT_MODE }}>
+  // 主题注入（单档）：UI 恒暗（2026-09-23 作者裁决），不再有模式切换与热同步 ——
+  // iframe 的主题就是 fallbackTheme（dark），构建期静态写进 src，首帧即暗。
+  (() => {
+    const frame = document.querySelector('.lab-frame');
+    if (!(frame instanceof HTMLIFrameElement)) return;
+    const artifact = frame.dataset.artifact;
+    if (!artifact) return;
+    frame.src = artifact + '?gb-chrome=min&gb=' + encodeURIComponent(fallbackTheme);
+  })();
+</script>
+
+<style>
+  .lab-crumb {
+    margin: 0 0 1rem;
+    font-size: 0.75rem;
+    line-height: 16px;
+    letter-spacing: var(--ls-12);
+  }
+
+  .lab-lede {
+    max-width: var(--w-prose);
+    margin: 0 0 1.5rem;
+    color: var(--color-text-dim);
+  }
+
+  /* 舞台比正文列宽：图内 12 用户单位对 1240 画布宽，896px 的 --w-wide 只够 8px 文字。
+     给到 88rem 时 SVG 拿到 ~1260px，12 单位 ≈ 12 屏幕 px —— 与站内插图同档、笔画不并死。
+     这是 /lab 专属宽度，不进 global.css：只有「要上手转的大图」需要它，
+     正文与列表仍走 --w-wide，避免全站容器语言分叉。 */
+  .lab-wide {
+    width: 100%;
+    max-width: min(88rem, 100% - 3rem);
+    margin-inline: auto;
+    padding-inline: calc(var(--step) * 3);
+  }
+
+  .lab-stage {
+    /* 复用全站面板语言（4px 边框 + 四角定位点），不新造装饰。
+       padding 用 .pixel-panel 默认的 24px —— 角点带占离内边框 8–16px，
+       小于 16px 的内容内边距会让角标切入内容（文章侧的老插图面板上踩过一次）。 */
+    position: relative;
+    padding: 24px;
+  }
+
+  .lab-frame {
+    display: block;
+    width: 100%;
+    /* 下限要装得下 archify 自身 chrome + 图（实测内容底边 446–526px，窄屏工具栏换行更高），
+       否则底部 legend 与 PATH/MAP/LENS 会被 overflow-y:hidden 裁掉且够不着。
+       余量由 skin.mjs 里「容器吃掉余量」那条吸收，所以上限给宽一点只等于多留拖动空间。 */
+    height: clamp(480px, 58vh, 620px);
+    border: 0;
+    background: var(--c-bg);
+  }
+
+  .lab-fallback {
+    margin: 0;
+    color: var(--color-text-dim);
+  }
+
+  .lab-meta {
+    margin: 1rem 0 0;
+    font-size: 0.75rem;
+    line-height: 18px;
+    letter-spacing: var(--ls-12);
+    color: var(--color-text-dim);
+  }
+
+  /* 窄屏：图已经只能横滚（图 min-width 1150 对 iframe 可用宽 216px），
+     但**在开始滚之前**先被四层内边距吃掉 128px（每侧 64px）：
+     lab-wide 外边距 24 + 它的 padding 12 + 面板边框 4 + 面板 padding 24。
+     实测 390px 视口下 iframe 只有 250px 宽（可用 216px），33% 的屏宽用在留白上 ——
+     而这一屏本来就要横向滚动，留白是纯损失。
+     这里把外边距与 padding 各收一档，面板 padding 收到 16px 下限
+     （不能再小：.pp-pad 角点带占离内边框 8–16px，低于 16px 角标会切入内容，
+     文章侧的老插图面板上踩过一次）。
+     实测效果：iframe 250 → 298px，横滚从 5.4 屏降到 3.9 屏。
+
+     **必须放在 .lab-stage 之后**：同特异性下源码顺序决定胜负，放前面会被上面的
+     padding:24px 覆盖（2026-09-11 实踩：写了 media query 但 frame 仍只拿到 274px）。 */
+  @media (max-width: 640px) {
+    .lab-wide {
+      max-width: calc(100% - 1.5rem);
+      padding-inline: 0;
+    }
+    .lab-stage {
+      padding: 16px;
+    }
+  }
+</style>

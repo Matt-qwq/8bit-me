@@ -1,0 +1,100 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { LAB_DIAGRAMS } from '../../lib/lab';
+import { siteConfig, url } from '../../lib/config';
+
+const title = `实验场 | ${siteConfig.title}`;
+const description =
+  '交互式架构图册：可以拖着看、缩着看、按层聚焦的系统图——把「系统长什么样」从静态插图升级成能上手转的东西。';
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="container container--prose">
+    <h1 class="section-title">
+      <span class="num text-pixel">L</span><span class="text-pixel">LAB</span> 实验场
+    </h1>
+
+    <p class="lab-lede">
+      这里放的是<strong>能上手转</strong>的系统图——拖动、缩放、搜索、按层聚焦，
+      比正文里那张「读完即走」的静态插图多一层可玩性。静态版仍在文章里，
+      两者同一份内容、两种讲法。
+    </p>
+
+    <ul class="lab-list">
+      {
+        LAB_DIAGRAMS.map((d) => (
+          <li class="lab-item">
+            <a class="pixel-panel lab-card" href={url(`lab/${d.id}/`)} data-sfx-role="nav" data-sfx-hover>
+              <h2 class="lab-card-title text-pixel">{d.title}</h2>
+              <p class="lab-card-sum">{d.summary}</p>
+              <span class="lab-card-go text-pixel">打开 &rarr;</span>
+              <span class="lab-card-tags">
+                {d.tags.map((t) => (
+                  <span class="tag text-pixel">{t}</span>
+                ))}
+              </span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+
+    {
+      LAB_DIAGRAMS.length === 0 && (
+        <p class="text-dim">图册还空着，下一篇长文配好图就放上来。</p>
+      )
+    }
+  </div>
+</BaseLayout>
+
+<style>
+  .lab-lede {
+    max-width: var(--w-prose);
+    margin: 0 0 2rem;
+    color: var(--color-text-dim);
+  }
+
+  .lab-list {
+    display: grid;
+    gap: 1.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    /* 单列：每条图都是一张需要横向空间的主图，不做网格缩略图 */
+    max-width: var(--w-prose);
+  }
+
+  .lab-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .lab-card-title {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    line-height: 24px;
+    letter-spacing: var(--ls-16);
+    color: var(--c-text);
+  }
+
+  .lab-card-sum {
+    margin: 0 0 1rem;
+    font-size: 0.875rem;
+    line-height: 22px;
+    color: var(--color-text-dim);
+  }
+
+  .lab-card-go {
+    font-size: 0.75rem;
+    line-height: 16px;
+    letter-spacing: var(--ls-12);
+    color: var(--c-accent);
+  }
+
+  .lab-card-tags {
+    display: inline-flex;
+    gap: 0.5rem;
+    margin-left: 0.75rem;
+  }
+</style>
