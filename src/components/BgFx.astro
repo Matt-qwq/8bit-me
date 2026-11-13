@@ -135,8 +135,6 @@ const { heroVivid = false } = Astro.props;
     glassTint,
     frost,
     mistGlass,
-    indoorReflection,
-    reflectionLayers,
     moonSpill,
     sunlitFrame,
     warmEdgeAlpha,
@@ -223,7 +221,6 @@ const { heroVivid = false } = Astro.props;
   let glassTintFx: { color: string; alpha: number } = { color: '#000000', alpha: 0 };
   let frostFx: { edge: boolean; cornerBoost: boolean } | null = null;
   let mistAlphaFx = 0;
-  let reflectionFx: { x: number; y: number; w: number; h: number; alpha: number } | null = null;
   let moonSpillFx: { x0: number; x1: number; alphaTop: number; alphaLow: number } | null = null;
   // T9 暖光系统帧读数（绘制与 dbg 共用同一份）
   let lampPoolFx: { x0: number; x1: number; y0: number; y1: number; alpha: number } | null = null;
@@ -280,7 +277,11 @@ const { heroVivid = false } = Astro.props;
       const hi = cols[k]!;
       const lo = cols[Math.min(k + 1, 5)]!;
       for (let col = 0; col < sw; col++) {
-        const rgb = ditherTakeLower(col, row, tt) ? lo : hi;
+        // 抖动只在中段展开：整段 0→1 的拜耳抖动会让 6 档色带之间的每一行都带
+        // 棋盘纹，1:1 下整片天像蒙了一层噪点（2026-11-13 实拍 2x 更明显）。
+        // 压到中段后段首/段尾是干净纯色，只有过渡带在抖。
+        const dt = clamp01((tt - 0.32) / 0.36);
+        const rgb = ditherTakeLower(col, row, dt) ? lo : hi;
         const o = (row * sw + col) * 4;
         d[o] = rgb[0];
         d[o + 1] = rgb[1];
@@ -344,18 +345,28 @@ const { heroVivid = false } = Astro.props;
       const mirrorCol = lerpHex(sky.bands[bi0]!, sky.bands[bi1]!, bf - bi0);
       // 暗化混向实景水色而不是纯黑：混黑会把湖面压成「水泥灰」，
       // 混水色才读得出「水」（黄昏自动金红、白天深蓝）
-      c.fillStyle = lerpHex(mirrorCol, sky.water, 0.42 + d * 0.5);
+      // 贴岸的水几乎是天空的镜子（0.30 混水色），越近观者越回到水的本色（0.92）：
+      // 黄昏时地平线一带因此是橙色的，而不是一层灰紫的板（2026-11-13 窗外风景轮）
+      c.fillStyle = lerpHex(mirrorCol, sky.water, 0.30 + d * 0.62);
       const shear = Math.round(Math.sin(y * 0.33) * (1 + d * 3));
       c.fillRect(-ox + shear, y, fw + 8, 1);
     }
-    // 1b) 水平反光条纹（像素水面的标志：越靠地平线越密、越亮）
-    // C3：0.16 → 0.12——水平条纹别与月亮反光列抢注意力
-    c.globalAlpha = 0.16;
-    for (let y = hy + 3; y < win.h; y += 7) {
-      const d = (y - hy) / waterH;
-      if ((y - hy) % 14 >= 7) continue;
-      c.fillStyle = sky.bands[5]!;
-      c.fillRect(-ox, y, fw, d < 0.4 ? 2 : 1);
+    // 1b) 水平反光条纹（像素水面的标志）：**间距随透视拉开**——贴地平线密、
+    // 近观者疏。旧版是等距 14px 的通栏直线（还有一句「越靠地平线越密」的注释
+    // 与代码不符），远看像尺子画的格线；现在每行断成 3–5 段短划，近处更长更亮。
+    const stRng = mulberry32(7717 + i * 53);
+    c.fillStyle = sky.bands[5]!;
+    let sy = hy + 2;
+    while (sy < win.h) {
+      const d = (sy - hy) / waterH;
+      c.globalAlpha = 0.05 + 0.13 * d; // 近处更亮
+      const segs = 3 + Math.floor(stRng() * 3);
+      for (let k = 0; k < segs; k++) {
+        const sx = -ox + stRng() * fw;
+        const sw = 12 + Math.round(stRng() * (30 + d * 90));
+        c.fillRect(sx, sy, sw, d > 0.55 ? 2 : 1);
+      }
+      sy += Math.max(2, Math.round(3 + Math.pow(d, 1.6) * 22));
     }
     c.globalAlpha = 1;
     // 1c) 贴岸亮带：地平线处的水是「最远处的镜面」，反射最多天光——最亮最天色
@@ -371,11 +382,19 @@ const { heroVivid = false } = Astro.props;
     const ridgeWithLight = (pts: [number, number][], bodyCol: string) => {
       c.fillStyle = bodyCol;
       fillRidge(c, pts, hy);
-      c.fillStyle = lerpHex(bodyCol, sky.bands[5]!, 0.34);
+      // 脊线受光：**3 行递减**而不是一根 1px 线——单线在 1:1 下读作贴纸描边，
+      // 递减 3 行才读作「山脊圆过来」（2026-11-13 窗外风景轮）
       for (let k = 1; k < pts.length; k++) {
         const [x0] = pts[k - 1]!;
         const [x1, y1] = pts[k]!;
-        c.fillRect(x0, Math.round(y1), Math.max(1, x1 - x0), 1);
+        const wdt = Math.max(1, x1 - x0);
+        const yy = Math.round(y1);
+        c.fillStyle = lerpHex(bodyCol, sky.bands[5]!, 0.34);
+        c.fillRect(x0, yy, wdt, 1);
+        c.fillStyle = lerpHex(bodyCol, sky.bands[5]!, 0.18);
+        c.fillRect(x0, yy + 1, wdt, 1);
+        c.fillStyle = lerpHex(bodyCol, sky.bands[5]!, 0.08);
+        c.fillRect(x0, yy + 2, wdt, 1);
       }
     };
     ridgeWithLight(farPts, sky.ridgeFar);
@@ -385,6 +404,16 @@ const { heroVivid = false } = Astro.props;
     const hazeH = Math.min(16, Math.round(win.h * 0.02));
     for (let k = 0; k < hazeH; k++) {
       c.globalAlpha = 0.02 + 0.18 * Math.pow(k / hazeH, 1.4);
+      c.fillStyle = sky.bands[5]!;
+      c.fillRect(-ox, hy - hazeH + k, fw, 1);
+    }
+    c.globalAlpha = 1;
+    // 3a''') 中山（2026-11-13）：远/近之间的第三层。色调取远/近之间（不新增色值），
+    //        山脚同样洗一遍雾坡——三层各自淡出，纵深才成立。
+    const midPts = ext(s.midRidge);
+    ridgeWithLight(midPts, lerpHex(sky.ridgeFar, sky.ridgeNear, 0.55));
+    for (let k = 0; k < hazeH; k++) {
+      c.globalAlpha = 0.02 + 0.16 * Math.pow(k / hazeH, 1.4);
       c.fillStyle = sky.bands[5]!;
       c.fillRect(-ox, hy - hazeH + k, fw, 1);
     }
@@ -407,15 +436,34 @@ const { heroVivid = false } = Astro.props;
         x += cw + 1 + Math.floor(rc() * 3);
       }
     }
-    // 3b') 近山暗棱双线：受光边下方 2px 再勾一条压暗棱线（双线勾边 = 像素山的体积）
+    // 3b') 近山暗棱：受光带（3 行）下方再勾一条压暗棱线（双线勾边 = 像素山的体积）。
+    // 2026-11-13：受光边从 1 行改成 3 行后，暗棱从 +2 挪到 +3，否则它会把
+    // 递减带的最后一行直接盖掉（受光又变回一根线）
     c.fillStyle = lerpHex(sky.ridgeNear, '#000000', 0.3);
     for (let k = 1; k < nearPts.length; k++) {
       const [x0] = nearPts[k - 1]!;
       const [x1, y1] = nearPts[k]!;
       c.globalAlpha = 0.5;
-      c.fillRect(x0, Math.round(y1) + 2, Math.max(1, x1 - x0), 1);
+      c.fillRect(x0, Math.round(y1) + 3, Math.max(1, x1 - x0), 1);
     }
     c.globalAlpha = 1;
+    // 3b'') 沟壑：从脊线往下 6–18px 的暗楔（上宽下窄）——平涂的山体读作一块色纸，
+    //        几条向下的暗沟才读得出坡面。确定性散布，只加近山（远山要保持「远」）
+    {
+      const rv = mulberry32(4177 + i * 131);
+      const shadowCol = lerpHex(sky.ridgeNear, '#000000', 0.24);
+      c.fillStyle = shadowCol;
+      for (let n = 0; n < 8; n++) {
+        const rx = Math.round(rv() * win.w);
+        const ry = Math.round(ridgeAt(s.nearRidge, rx));
+        const rh = 6 + Math.floor(rv() * 13);
+        const rw = 3 + Math.floor(rv() * 4);
+        for (let k = 0; k < rh; k++) {
+          const w2 = Math.max(1, rw - Math.floor((k / rh) * rw));
+          c.fillRect(rx - (w2 >> 1), ry + 4 + k, w2, 1);
+        }
+      }
+    }
     // 3b) 积雪（下雪时最强的视觉信号：山脊铺一层白，底边用正弦做出积雪厚度不均）
     if (snowAmt > 0.01) {
       const cap = (pts: [number, number][], depth: number) => {
@@ -429,6 +477,7 @@ const { heroVivid = false } = Astro.props;
         }
       };
       cap(farPts, 0.35);
+      cap(midPts, 0.6);
       cap(nearPts, 1);
       // 岸线积雪（水边的一条白）
       c.fillStyle = lerpHex(sky.bands[5]!, '#ffffff', 0.6);
@@ -1196,20 +1245,24 @@ const { heroVivid = false } = Astro.props;
     const hx0 = x0 + Math.round(win.w * 0.58);
     const sheenFade = y0 + Math.round(win.h * 0.28); // 淡出起点（全阶 → 半阶）
     const sheenEnd = y0 + Math.round(win.h * 0.42);  // 上段终点（远在地平线之上）
+    // 断开成短划（2026-11-13）：砍短长度之后仍是**一条连续的直线**，静态画面里
+    // 读作屏幕划痕——真实玻璃反光是几段不连续的短划。断口按固定周期，
+    // 两道光带相位错开，不做成平行虚线。
+    const DASH = 46;
+    const GAP = 34;
+    const PERIOD = DASH + GAP;
     ctx.fillStyle = glass;
-    ctx.globalAlpha = worldAlpha * 0.09 * sheenK;
-    for (let yy = y0; yy < sheenFade; yy += 2) {
+    for (let yy = y0; yy < sheenEnd; yy += 2) {
+      if ((yy - y0) % PERIOD > DASH) continue;
+      const fade = yy < sheenFade ? 1 : 0.5;
       const gx = hx0 + ((y1 - yy) >> 1); // 斜率 2:1 的阶梯列
+      ctx.globalAlpha = worldAlpha * 0.09 * sheenK * fade;
       ctx.fillRect(gx, yy, 8, 2);
     }
-    ctx.globalAlpha = worldAlpha * 0.045 * sheenK;
-    for (let yy = sheenFade; yy < sheenEnd; yy += 2) {
-      const gx = hx0 + ((y1 - yy) >> 1);
-      ctx.fillRect(gx, yy, 8, 2);
-    }
-    ctx.globalAlpha = worldAlpha * 0.06 * sheenK;
     for (let yy = y0 + 6; yy < sheenEnd; yy += 2) {
+      if ((yy - y0 + 28) % PERIOD > DASH - 14) continue;
       const gx = hx0 + 26 + ((y1 - yy) >> 1);
+      ctx.globalAlpha = worldAlpha * 0.06 * sheenK;
       ctx.fillRect(gx, yy, 4, 2);
     }
     ctx.restore();
@@ -1963,7 +2016,6 @@ const { heroVivid = false } = Astro.props;
     // T5 读数每帧清零：世界不可见时不该残留上一帧的光学层读数
     frostFx = null;
     mistAlphaFx = 0;
-    reflectionFx = null;
     moonSpillFx = null;
     lampPoolFx = null;
     crtGlowFx = null;
@@ -2079,48 +2131,86 @@ const { heroVivid = false } = Astro.props;
       // 0.4·nightK），顶边微光落在可见的暗体上才成立；白天恒等于原色。
       const nightK = 1 - clamp01(daylight);
       const sil = (hex: string) => lerpHex(hex, '#000000', nightK * 0.4);
-      const cloudHiCol = sil(lerpHex(sky.cloudHi, sky.bands[2]!, thick * 0.85));
+      const cloudHiBase = sil(lerpHex(sky.cloudHi, sky.bands[2]!, thick * 0.85));
       // 白天云底再压一档（2026-10-30 白天美术）：三档明暗在夜里的暗剪影上够用，
       // 白天三档都挤在浅灰里，云读作「几块灰纸」。底档向黑收 16%·dayK 才出体积。
-      const cloudLoCol = lerpHex(
+      const cloudLoBase = lerpHex(
         sil(lerpHex(sky.cloudLo, sky.bands[0]!, thick * 0.8)),
         '#000000',
         clamp01(daylight) * 0.16
       );
-      const cloudMidCol = lerpHex(cloudHiCol, cloudLoCol, 0.45); // 中排：介于受光/受影
+      const cloudMidCol = lerpHex(cloudHiBase, cloudLoBase, 0.45); // 中排：介于受光/受影
+      // 阴天收档（2026-11-13）：没有直射光时上下两档拉得太开，每朵云是「亮顶 +
+      // 中调 + 暗底」三道横带，满云叠起来读作胶合板。按 sunVis 把两档往中调收：
+      // 晴天 tierK=1 原样，阴雨雾天收到 0.35（云只剩下一点体积）。
+      const tierK = 0.35 + 0.65 * sunVis;
+      const cloudHiCol = lerpHex(cloudMidCol, cloudHiBase, tierK);
+      const cloudLoCol = lerpHex(cloudMidCol, cloudLoBase, tierK);
+      // 夕照云底：地平线色越暖（R−B 越大）说明太阳压得越低，被从**下方**照亮的是云底。
+      // 黄昏的云因此下缘发暖、上缘发冷；正午地平线偏蓝（R−B<0）→ warmBaseK=0，零影响。
+      const hzRgb = hexToRgb(sky.bands[5]!);
+      const warmBaseK = clamp01((hzRgb[0] - hzRgb[2]) / 60);
+      const cloudBaseCol = lerpHex(cloudLoCol, sky.bands[5]!, 0.32 * warmBaseK);
+      // 瓣顶受光：白天取太阳色（暖白），夜里月色微光；sunVis 一票否决阴天
+      const capDayCol = lerpHex(cloudHiCol, sky.sun, 0.5);
+      const capDayA = worldAlpha * 0.5 * sunVis * (1 - nightK);
+      const capNightA = worldAlpha * 0.13 * starlight * sunVis * nightK;
       // 2026-10-05 评审③：夜云整体再沉一档——夜里乘 (1−0.25·nightK)（剪影已
       // 承担可见度，这层只做轻收），白天这条恒为 1（零影响）。
       const cdx = par(0.6);
-      for (const c of clouds) {
-        const dx = cdx * (c.depth ? 1 : 0.5);
+      // 远近分层渲染（2026-11-13 阴天层次）：满云时 20 朵云同色同透明度叠在一起
+      // 就是一面灰墙。远层**先画**、向天色洗 30%、整体 75% 透明；近层后画、保持饱和——
+      // 云与云重叠的地方因此看得见边缘，云层读作「几层云」而不是一坨灰。
+      const haze = (hex: string) => lerpHex(hex, sky.bands[2]!, 0.3);
+      const farHi = haze(cloudHiCol);
+      const farMid = haze(cloudMidCol);
+      const farBase = haze(cloudBaseCol);
+      const ordered = [...clouds].sort((a, b) => a.depth - b.depth);
+      for (const c of ordered) {
+        const isFar = c.depth === 0;
+        const dx = cdx * (isFar ? 0.5 : 1);
         // 形状逐帧变形（整数伸缩）+ 上下起伏：云不是贴纸，是在缓慢鼓起与消散
         const blocks = morphCloud(c, t);
         const dy = cloudBob(t, c.bobPh, c.bobAmp);
         // 三档明暗按「块底在云高中的位置」取色：低处受影、顶部受光——
         // 两档（只有底座暗/其余亮）时代云读作两块色纸，三档才有体积
-        ctx.globalAlpha = worldAlpha * (0.85 - thick * 0.1) * (1 - nightK * 0.25);
-        let topY = Infinity;
-        let topRow: [number, number, number] | null = null;
+        ctx.globalAlpha =
+          worldAlpha * (0.85 - thick * 0.1) * (1 - nightK * 0.25) * (isFar ? 0.75 : 1);
         for (const [bx, by, bw, bh] of blocks) {
           const bf = (by + bh) / Math.max(1, c.h);
-          ctx.fillStyle = bf > 0.66 ? cloudLoCol : bf > 0.42 ? cloudMidCol : cloudHiCol;
+          // 底座在低日角被夕照打亮：太阳落到地平线下时照亮的是云的**底**，
+          // 黄昏的云因此下缘发暖、上缘发冷（旧版整朵一起压暗，读作灰板）
+          ctx.fillStyle = bf > 0.66
+            ? isFar
+              ? farBase
+              : cloudBaseCol
+            : bf > 0.42
+              ? isFar
+                ? farMid
+                : cloudMidCol
+              : isFar
+                ? farHi
+                : cloudHiCol;
           ctx.fillRect(Math.round(c.x + bx + dx), Math.round(c.y + by + dy), bw, bh);
-          if (by < topY) {
-            topY = by;
-            topRow = [bx, by, bw];
-          }
         }
-        // 月光顶边：夜里云顶 1px 月色微光，云才「浮在夜里」而不是悬空黑板；
-        // sunVis 一票否决阴天（月亮本来就被云遮死了），白天 nightK=0 不画
-        if (topRow && nightK > 0 && starlight > 0.3 && sunVis > 0.05) {
-          ctx.fillStyle = sky.moon;
-          ctx.globalAlpha = worldAlpha * 0.13 * starlight * sunVis * nightK;
-          ctx.fillRect(
-            Math.round(c.x + topRow[0] + dx),
-            Math.round(c.y + topRow[1] + dy),
-            topRow[2],
-            1
+        // 瓣顶受光：**每一瓣**的顶边 1px 亮线（不是整朵只画最上面那一行）——
+        // 分瓣云有多个顶点，只勾最高点等于把其余的瓣又压回成一块板。
+        // 判据：该块顶边正上方没有任何块覆盖 → 它是这一列的瓣顶。
+        for (const [bx, by, bw] of blocks) {
+          const exposed = !blocks.some(
+            ([ox, oy, ow, oh]) =>
+              oy < by && oy + oh >= by && ox < bx + bw && bx < ox + ow
           );
+          if (!exposed) continue;
+          if (capDayA > 0.01) {
+            ctx.fillStyle = capDayCol;
+            ctx.globalAlpha = capDayA;
+            ctx.fillRect(Math.round(c.x + bx + dx), Math.round(c.y + by + dy), bw, 1);
+          } else if (capNightA > 0.01) {
+            ctx.fillStyle = sky.moon;
+            ctx.globalAlpha = capNightA;
+            ctx.fillRect(Math.round(c.x + bx + dx), Math.round(c.y + by + dy), bw, 1);
+          }
         }
       }
       ctx.globalAlpha = 1;
@@ -2138,6 +2228,46 @@ const { heroVivid = false } = Astro.props;
       if (scenery) drawReflection(i, ft, sdx, win.h);
       ctx.globalAlpha = 1;
 
+      // 5c) 向阳坡 / 背阴坡（2026-11-13）：太阳（夜里是月亮）在哪一侧，坡向那一侧的
+      //     脊线薄带受光、背向的一侧压暗。缓存帧只按**太阳高度**分档、不含方位，
+      //     所以这层必须逐帧画（否则同一档天色里太阳横移，山坡的明暗却是死的）。
+      if (scenery && (sunVis > 0.05 || starlight > 0.3)) {
+        const bodyX =
+          sunArcX >= 0
+            ? win.w * (0.12 + sunArcX * 0.76)
+            : moonArcX >= 0
+              ? win.w * (0.12 + moonArcX * 0.76)
+              : -1;
+        if (bodyX >= 0) {
+          const pts = scenery.nearRidge;
+          const litCol = lerpHex(sky.ridgeNear, sky.bands[5]!, 0.55);
+          const darkCol = lerpHex(sky.ridgeNear, '#000000', 0.4);
+          const k0 = clamp01(daylight) * 0.8 + starlight * 0.45;
+          // 按 ~16px 一段聚合坡度：逐点（脊线采样 3px）会把明暗切成锯齿，
+          // 一截一截地读作「脊线长了毛」；16px 一段才读作「一面坡」
+          const CHUNK = 5;
+          for (let k = 0; k + CHUNK < pts.length; k += CHUNK) {
+            const [x0, y0p] = pts[k]!;
+            const [x1, y1p] = pts[k + CHUNK]!;
+            const dx = x1 - x0;
+            if (dx <= 0) continue;
+            const slope = (y1p - y0p) / dx; // >0 = 向右下（朝右的坡面）
+            if (Math.abs(slope) < 0.05) continue; // 平台面：没有坡向可言
+            const lit = slope > 0 === bodyX > x0;
+            ctx.fillStyle = lit ? litCol : darkCol;
+            ctx.globalAlpha =
+              worldAlpha * k0 * (lit ? 0.5 : 0.42) * Math.min(1, Math.abs(slope) * 2.2);
+            ctx.fillRect(
+              x0 + sdx,
+              Math.round(Math.min(y0p, y1p)) + 3,
+              Math.max(1, dx),
+              lit ? 4 : 6
+            );
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // 6) 湖面波光（天体光柱带内的闪烁亮点）+ 雨落涟漪
       if (scenery) {
         const pillarX =
@@ -2150,11 +2280,16 @@ const { heroVivid = false } = Astro.props;
           const glowCol = sunArcX >= 0 ? sky.sunGlow : sky.moon;
           const base = Math.max(0.35, Math.max(daylight, starlight)) * sunVis * precipK;
           ctx.fillStyle = glowCol;
+          const hyP = scenery.horizonY;
+          const waterH = Math.max(1, win.h - hyP);
           for (const sp of sparkles) {
             const b = Math.sin(t * sp.spd + sp.ph);
             if (b < 0.62) continue;
             ctx.globalAlpha = worldAlpha * base * (b - 0.62) * 3.2;
-            ctx.fillRect(Math.round(pillarX + sp.ox) + sdx, Math.round(sp.y), 5, 1);
+            // 光柱按透视加宽：贴地平线的碎光 2px，越近观者越宽（最多 11px）——
+            // 等宽的 5px 短线排成一列，读作「一串黄色点子」而不是一条光路
+            const pw = 2 + Math.round(((sp.y - hyP) / waterH) * 9);
+            ctx.fillRect(Math.round(pillarX + sp.ox) + sdx, Math.round(sp.y), pw, 1);
           }
           ctx.globalAlpha = 1;
         }
@@ -2421,35 +2556,11 @@ const { heroVivid = false } = Astro.props;
       }
       ctx.globalAlpha = 1;
     }
-    // 8c) 室内暖光在玻璃上的反光斑（T5）：夜里身后那盏灯的幽灵倒影，
-    // 低频双正弦漂移（位置/尺寸/alpha 全由 indoorReflection 出，不写死）。
-    // 画在滑痕/水股之上：倒影在玻璃体内，水珠在玻璃表面，后者该盖住前者。
-    // 2026-10-05 评审①：硬边实心矩形悬在画面正中读作 UI 残片——改三层软边
-    // （reflectionLayers 同源出几何）+ 纵向灯柱形状 + 只在深夜亮（starlight≥0.7）。
-    // 2026-10-06 二轮：锚位从 0.42h 下移到 0.64h——灯在观察者身后偏下，倒影
-    // 落在玻璃下段，与夜暖晕同构（「屋里的暖从底下上来」），不再悬在天空正中。
-    reflectionFx = null;
-    if (winOn) {
-      const r = indoorReflection(t, starlight, palette);
-      if (r) {
-        const cx = win.x + Math.round(win.w * 0.5) + r.x;
-        const cy = win.y + Math.round(win.h * 0.64) + r.y;
-        const core = {
-          x: cx - (r.w >> 1),
-          y: cy - (r.h >> 1),
-          w: r.w,
-          h: r.h,
-          alpha: r.alpha,
-        };
-        reflectionFx = { x: core.x, y: core.y, w: core.w, h: core.h, alpha: r.alpha };
-        ctx.fillStyle = r.color;
-        for (const L of reflectionLayers(core)) {
-          ctx.globalAlpha = worldAlpha * L.alpha;
-          ctx.fillRect(L.x, L.y, L.w, L.h);
-        }
-        ctx.globalAlpha = 1;
-      }
-    }
+    // 8c) 玻璃反光斑已退役（2026-11-13 作者裁决：「去掉，无法辨认是什么东西」）。
+    // 它原意是「身后那盏灯在玻璃上的倒影」，但形态上无论怎么调（1px 线 → 三层软边
+    // → 纵向灯柱 → 点阵外圈）在夜空里都读作「第二个天体」——作者实拍提问
+    // 「天空最上面是月亮，下面还有个像太阳的东西」即此。一个认不出来的光学层
+    // 比没有更糟：删掉。玻璃的物性仍由冷罩 / 结露 / 起雾 / 雨梳痕承担。
     if (flakes.length > 0) {
       const boost = Math.min(0.9, 1 + scrimCover * 1.6);
       for (const f of flakes) {
@@ -2521,7 +2632,6 @@ const { heroVivid = false } = Astro.props;
       glassTint: glassTintFx,
       frost: frostFx,
       mistAlpha: mistAlphaFx,
-      reflection: reflectionFx,
       moonSpill: moonSpillFx,
       // T9 暖光系统读数（e2e 辅助判据；主判据仍落像素）
       lampPool: lampPoolFx,

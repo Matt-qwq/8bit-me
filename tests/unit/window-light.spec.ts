@@ -7,8 +7,6 @@ import {
   frameProfile,
   frost,
   glassTint,
-  indoorReflection,
-  reflectionLayers,
   mistGlass,
   moonSpill,
   wallFace,
@@ -17,7 +15,6 @@ import {
   warmEdgeAlpha,
   glassWarm,
   GLASS_WARM_DAY,
-  REFLECT_STAR,
 } from '../../src/lib/window-light';
 
 /**
@@ -31,14 +28,6 @@ const P: Palette = { bg: '#101020', accent: '#ff8800', light: '#e0e0ff' };
 const HOLE = { x: 100, y: 50, w: 400, h: 300 };
 
 describe('window-light / 确定性', () => {
-  it('indoorReflection 同一入参两次调用深相等（t=0..6000 步长 137）', () => {
-    for (let t = 0; t <= 6000; t += 137) {
-      const a = indoorReflection(t, 0.8, P);
-      const b = indoorReflection(t, 0.8, P);
-      expect(a).toEqual(b);
-    }
-  });
-
   it('moonSpill / frameProfile / wall 派生同样确定', () => {
     expect(moonSpill(HOLE, 250, 0.9)).toEqual(moonSpill(HOLE, 250, 0.9));
     expect(frameProfile(P, '#0d1640')).toEqual(frameProfile(P, '#0d1640'));
@@ -52,13 +41,6 @@ describe('window-light / 阈值域', () => {
     expect(moonSpill(HOLE, 250, 0.4)).toBeNull();
     expect(moonSpill(HOLE, 250, 0.5)).not.toBeNull();
     expect(moonSpill(HOLE, 250, 0.6)).not.toBeNull();
-  });
-
-  it('indoorReflection：starlight<REFLECT_STAR 不可见，≥REFLECT_STAR 可见（2026-10-05 起深夜门）', () => {
-    expect(indoorReflection(100, 0.3, P)).toBeNull();
-    expect(indoorReflection(100, REFLECT_STAR - 0.1, P)).toBeNull(); // 黄昏/黎明关门（旧 0.45 档在这里可见）
-    expect(indoorReflection(100, REFLECT_STAR, P)).not.toBeNull();
-    expect(indoorReflection(100, 0.8, P)).not.toBeNull();
   });
 
   it('frost：有雨时（rain=0.5）不结露', () => {
@@ -113,74 +95,14 @@ describe('window-light / moonSpill 几何', () => {
   });
 });
 
-describe('window-light / indoorReflection 漂移', () => {
-  it('全程逐样漂移有界、输出整数、alpha ≤0.24（0.1 档暖金盖不住夜空蓝底，2026-10-06 提亮）', () => {
-    let prev = indoorReflection(0, 0.9, P);
-    expect(prev).not.toBeNull();
-    for (let t = 137; t <= 6000; t += 137) {
-      const cur = indoorReflection(t, 0.9, P);
-      expect(cur).not.toBeNull();
-      expect(Math.abs(cur!.x - prev!.x)).toBeLessThanOrEqual(10);
-      expect(Math.abs(cur!.y - prev!.y)).toBeLessThanOrEqual(4);
-      for (const v of [cur!.x, cur!.y, cur!.w, cur!.h]) {
-        expect(Number.isInteger(v)).toBe(true);
-      }
-      expect(cur!.alpha).toBeLessThanOrEqual(0.24);
-      expect(cur!.alpha).toBeGreaterThanOrEqual(0);
-      prev = cur;
-    }
-  });
-
-  it('深夜满档时足够亮到读出暖色（alpha ≥ 0.2，旧 0.1 档必红）', () => {
-    expect(indoorReflection(100, 1.0, P)!.alpha).toBeGreaterThanOrEqual(0.2);
-  });
-
-  it('形状是纵向灯柱晕：全程 w < h（旧 18×10 横板在这里必红）', () => {
-    for (let t = 0; t <= 6000; t += 137) {
-      const cur = indoorReflection(t, 0.9, P)!;
-      expect(cur.w, `t=${t} 时 w=${cur.w} 不小于 h=${cur.h}`).toBeLessThan(cur.h);
-    }
-  });
-
-  it('alpha 随 starlight 升且颜色为 accent 少混白的纯暖（2026-10-06：0.35 混白读不出暖）', () => {
-    const a = indoorReflection(100, REFLECT_STAR + 0.05, P)!;
-    const b = indoorReflection(100, 1.0, P)!;
-    expect(b.alpha).toBeGreaterThanOrEqual(a.alpha);
-    expect(b.color).toBe(lerpHex(P.accent, '#ffffff', 0.15));
-  });
-});
-
-describe('window-light / reflectionLayers 三层软边', () => {
-  const core = { x: 100, y: 80, w: 12, h: 26, alpha: 0.24 };
-
-  it('三层：核心原样 + 两圈外扩 (3,6)/(6,12)，alpha 乘 0.6/0.3（两位小数）', () => {
-    const ls = reflectionLayers(core);
-    expect(ls).toHaveLength(3);
-    expect(ls[0]).toEqual(core);
-    expect(ls[1]).toEqual({ x: 97, y: 74, w: 18, h: 38, alpha: 0.14 });
-    expect(ls[2]).toEqual({ x: 94, y: 68, w: 24, h: 50, alpha: 0.07 });
-  });
-
-  it('逐层严格包含（外圈完整包住内圈）且 alpha 严格递减', () => {
-    const [a, b, c] = reflectionLayers(core);
-    for (const [inner, outer] of [
-      [a!, b!],
-      [b!, c!],
-    ]) {
-      expect(outer.x).toBeLessThanOrEqual(inner.x);
-      expect(outer.y).toBeLessThanOrEqual(inner.y);
-      expect(outer.x + outer.w).toBeGreaterThanOrEqual(inner.x + inner.w);
-      expect(outer.y + outer.h).toBeGreaterThanOrEqual(inner.y + inner.h);
-      expect(outer.alpha).toBeLessThan(inner.alpha!);
-    }
-    for (const L of reflectionLayers(core)) {
-      for (const v of [L.x, L.y, L.w, L.h]) expect(Number.isInteger(v)).toBe(true);
-    }
-  });
-
-  it('alpha=0 的核心仍出三层全零（绘制侧免判）', () => {
-    const ls = reflectionLayers({ ...core, alpha: 0 });
-    expect(ls.map((L) => L.alpha)).toEqual([0, 0, 0]);
+describe('window-light / 反光斑退役（2026-11-13 作者裁决）', () => {
+  it('源码不再导出 indoorReflection / reflectionLayers（认不出来的光学层整段删除）', () => {
+    const src = readFileSync(join(process.cwd(), 'src/lib/window-light.ts'), 'utf8');
+    expect(src).not.toMatch(/export function indoorReflection/);
+    expect(src).not.toMatch(/export function reflectionLayers/);
+    const bg = readFileSync(join(process.cwd(), 'src/components/BgFx.astro'), 'utf8');
+    expect(bg).not.toMatch(/indoorReflection\(/);
+    expect(bg).not.toMatch(/reflectionFx/);
   });
 });
 

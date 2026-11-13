@@ -585,7 +585,12 @@ test('场景契约：远山与近山真的画在画布上（色值取自源码�
   expect(nFar, `远山色 ${sky.ridgeFar} 只找到 ${nFar} 像素`).toBeGreaterThan(2000);
   // ② 山脊有起伏：不是一条水平线
   // 扫描窗由山脊几何派生（曾写死 0.5h–0.66h：山体整体下移后窗口落空，判据必红）
-  const minRidgeY = Math.min(...sc.farRidge.map(([, y]) => y), ...sc.nearRidge.map(([, y]) => y));
+  // 三层都要进：只算远/近会在中山更高的列上把取样窗开进中山体
+  const minRidgeY = Math.min(
+    ...sc.farRidge.map(([, y]) => y),
+    ...sc.midRidge.map(([, y]) => y),
+    ...sc.nearRidge.map(([, y]) => y)
+  );
   const { prof } = await sceneProbe(page, win, win.y + minRidgeY - 24, win.y + sc.horizonY - 6);
   const found = prof.filter((y) => y > 0);
   expect(found.length, `多数列都该找到山脊（找到 ${found.length}/${prof.length}）`).toBeGreaterThan(
@@ -626,7 +631,13 @@ test('场景契约：地平线以下是水面（暗于紧邻的天空且有水�
   for (let x = lo; x < hi; x++) {
     // min 而非 max：山体是「脊线 → 地平线」填充，天空在**两条脊线都更低**的那一侧，
     // 取 max 会把取样点落到远山体内部（远山更高时），量到的是山不是天空
-    const t = Math.min(ridgeAt(sc.farRidge, x), ridgeAt(sc.nearRidge, x));
+    // 三层取最高的一条：中山在某些列会比远山更高（相位不同），漏掉它
+    // 就会把「山脊上方的天空」取到中山体上（量到 133 的暗色，水面反而更亮）
+    const t = Math.min(
+      ridgeAt(sc.farRidge, x),
+      ridgeAt(sc.midRidge, x),
+      ridgeAt(sc.nearRidge, x)
+    );
     if (t > top) {
       top = t;
       x0 = x;
@@ -1063,6 +1074,7 @@ test('场景加密度：倒影随波扭曲（水面镜像带随时间真的在�
   const sc = genScenery(win.w, win.h);
   const ridgeTop = Math.min(
     ...sc.farRidge.map(([, y]) => y),
+    ...sc.midRidge.map(([, y]) => y),
     ...sc.nearRidge.map(([, y]) => y)
   );
   const reflSpan = Math.min(2 * (sc.horizonY - ridgeTop), win.h - sc.horizonY - 4);
@@ -1261,7 +1273,10 @@ test('下雪：山脊积雪（雪天最强的视觉信号，不是「蓝天 + �
   const size = await canvasSize(page);
   const win = windowSpec(size.w, size.h);
   const sc = genScenery(win.w, win.h);
-  const ridgeTop = win.y + Math.min(...sc.farRidge.map(([, y]) => y)) - 4;
+  const ridgeTop =
+    win.y +
+    Math.min(...sc.farRidge.map(([, y]) => y), ...sc.midRidge.map(([, y]) => y)) -
+    4;
   const ridgeBottom = win.y + sc.horizonY - 4;
   const r = await page.evaluate(
     ([ridgeTop, ridgeBottom, wx, wxEnd]) => {
@@ -1575,37 +1590,23 @@ test('月光透窗：夜里窗台台面落一段月亮带（几何/色值同源�
   await day.close();
 });
 
-test('室内反光斑：夜里玻璃上有幽灵暖光斑（像素差分），白昼同一区域无差', async ({ page }) => {
+test('室内反光斑已退役：深夜玻璃中央不该有第二团天体（作者 2026-11-13 裁决）', async ({ page }) => {
+  // 原「幽灵暖光斑」在任何形态下都读作第二个天体（作者：「天空最上面是月亮，
+  // 下面还有个像太阳的东西」/「去掉，无法辨认是什么东西」）。这条守**它不再回来**：
+  // debug 状态里没有 reflection 字段，且玻璃中央那块区域与紧邻对照区亮度无差。
   await openWorldAt(page, 23, 30);
   const size = await canvasSize(page);
   const win = windowSpec(size.w, size.h);
   const dbg = await debugState(page);
-  const refl = dbg.reflection as { x: number; y: number; w: number; h: number; alpha: number } | null;
-  expect(refl, '夜里玻璃上该有室内反光斑').not.toBeNull();
-  // 锚位在玻璃下三分位（2026-10-06 评审：与夜暖晕同构「屋里的暖从底下上来」，
-  // 不再悬在天空正中）——旧 0.42h 锚位在此必红
-  expect(
-    refl!.y,
-    `反光斑 y=${refl!.y} 不在玻璃下三分位（应 ≥ ${win.y + Math.round(win.h * 0.55)}）`
-  ).toBeGreaterThanOrEqual(win.y + Math.round(win.h * 0.55));
-  // 主判据落像素：斑内 vs 同尺寸紧邻偏移区（位置由纯函数出，dbg 只提供几何）。
-  // 2026-10-05 起反光斑 = 三层软边（外圈向外扩 6px）——对照区偏移 +10 才真正出晕外。
-  const a = await rectMeanLum(page, refl!.x, refl!.y, refl!.w, refl!.h);
-  const b = await rectMeanLum(page, refl!.x + refl!.w + 10, refl!.y, refl!.w, refl!.h);
-  expect(a - b, `反光斑内/外亮度差 ${(a - b).toFixed(2)} ≤ 6 → 反光斑没画`).toBeGreaterThan(6);
-  // 白昼对照：斑不存在；同一锚点区域（从 windowSpec 派生，覆盖斑的漂移范围 + 全部软边圈）内外无差
-  const day = await page.context().newPage();
-  await openWorldAt(day, 12, 0, 0, 1);
-  expect((await debugState(day)).reflection, '白天不该有反光斑').toBeNull();
+  expect(dbg.reflection, '反光斑又从 debug 状态里冒出来了').toBeUndefined();
   const ax = win.x + Math.round(win.w * 0.5) - 24;
   const ay = win.y + Math.round(win.h * 0.64) - 20;
-  const da = await rectMeanLum(day, ax, ay, 48, 44);
-  const db2 = await rectMeanLum(day, ax + 53, ay, 48, 44);
+  const a = await rectMeanLum(page, ax, ay, 48, 44);
+  const b = await rectMeanLum(page, ax + 53, ay, 48, 44);
   expect(
-    Math.abs(da - db2),
-    `白昼同一区域仍有 ${Math.abs(da - db2).toFixed(2)} 差 → 反光斑常驻了`
+    Math.abs(a - b),
+    `玻璃中央仍有 ${Math.abs(a - b).toFixed(2)} 的亮度差 → 有一团东西浮在那儿`
   ).toBeLessThanOrEqual(1);
-  await day.close();
 });
 
 test('寒夜结露：玻璃上/左内缘 1px 亮霜线（夜里亮、白昼无），下缘无霜', async ({ page }) => {

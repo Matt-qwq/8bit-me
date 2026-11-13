@@ -44,3 +44,38 @@ expect(s.strokeColor, '描边色 = 解析后的 --c-line（token 跟随，不许
   expect(s.fontFamily).toContain('Zpix');
   expect(s.fontSize).toBe('48px');
 });
+
+test('页脚三行都落在整数像素上（半像素会让 Zpix 的 1px 笔画整段发灰）', async ({ page }) => {
+  // 2026-11-13 作者指出页脚「有点问题」后的实测：三行行盒顶分别是 x.594——
+  // 来源是 0.6rem=9.6px / 0.4rem=6.4px 两个非整数外边距，外加 Zpix 48px 的
+  // 字体盒是 56.064px（line-height 压不住）。半像素偏移下 1px 笔画会摊成 2px 灰边，
+  // 而 horizontal 那套（pixel-grid.spec）只测字距，测不到竖直方向。
+  await page.goto('/');
+  await page.addStyleTag({ content: 'footer { --x: 0 }' });
+  const ys = await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    const f = document.querySelector('footer.footer')!;
+    return ['foot-mark', 'foot-line', 'foot-credit'].map((c) => {
+      const b = f.querySelector('.' + c)!.getBoundingClientRect();
+      return { cls: c, top: +(b.top + window.scrollY).toFixed(3) };
+    });
+  });
+  const bad = ys.filter((r) => Math.abs(r.top - Math.round(r.top)) > 0.02);
+  expect(bad, '页脚行盒顶不在整数像素：' + bad.map((b) => b.cls + '=' + b.top).join(', ')).toEqual(
+    []
+  );
+});
+
+test('署名行与 © 行同用 Zpix（丝印标签不混系统黑体）', async ({ page }) => {
+  await page.goto('/');
+  const [line, credit] = await page.evaluate(() => {
+    const f = document.querySelector('footer.footer')!;
+    return ['.foot-line', '.foot-credit'].map(
+      (s) => getComputedStyle(f.querySelector(s)!).fontFamily
+    );
+  });
+  expect(line).toContain('Zpix');
+  expect(credit, '署名行走回系统黑体（390px 下一行像素字一行黑体，一眼看出不属于这个站）').toContain(
+    'Zpix'
+  );
+});

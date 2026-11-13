@@ -68,6 +68,8 @@ export interface ScenerySpec {
   horizonY: number;
   /** 远山脊线采样点 [x, y][]（大气透视最淡层，在后方且更高） */
   farRidge: [number, number][];
+  /** 中山脊线采样点（远与近之间的第三层：两层的画面只有「前后」，三层才有「纵深」） */
+  midRidge: [number, number][];
   /** 近山脊线采样点（稍暗，在前方且更低——两层错开才有纵深） */
   nearRidge: [number, number][];
   /** 前景芦苇丛（左右两侧，不挡画面中央） */
@@ -142,6 +144,9 @@ export function genScenery(w: number, h: number, seed = 20260921): ScenerySpec {
   const rng = mulberry32(seed);
   const horizonY = Math.round(h * 0.8);
   const farRidge = ridgeLine(w, Math.round(h * 0.775), h * 0.06, 3.2, seed + 11);
+  // 中山（2026-11-13）：夹在远/近之间——三层错开 13–15px，叠出「远淡中灰近实」
+  // 的纵深；两层时代远景只有前后两片，读作两块色板。
+  const midRidge = ridgeLine(w, Math.round(h * 0.786), h * 0.054, 4.3, seed + 17);
   const nearRidge = ridgeLine(w, Math.round(h * 0.795), h * 0.048, 5.5, seed + 23);
 
   const reeds: Reed[] = [];
@@ -204,7 +209,16 @@ export function genScenery(w: number, h: number, seed = 20260921): ScenerySpec {
   };
   trees.push(treeAt(isle.x, horizonY - isle.h, true, 1.3 + rng() * 0.3));
 
-  return { horizonY, farRidge, nearRidge, reeds, trees, isle, hatch: hatchStrokes(nearRidge, horizonY, seed + 37) };
+  return {
+    horizonY,
+    farRidge,
+    midRidge,
+    nearRidge,
+    reeds,
+    trees,
+    isle,
+    hatch: hatchStrokes(nearRidge, horizonY, seed + 37),
+  };
 }
 
 // ---------------- 山体皴纹 ----------------
@@ -460,7 +474,9 @@ export function morphCloud(c: PixelCloud, t: number): [number, number, number, n
     const m = c.morph[k]!;
     const span = bw > 28 ? CLOUD.MORPH_MAX : 1;
     const dw = Math.round(Math.sin(t * CLOUD.MORPH_W_WIDE * m.wK + m.wPh) * span);
-    const dh = Math.round(Math.sin(t * CLOUD.MORPH_W_TALL * m.hK + m.hPh));
+    // 只往上长、不往回缩：收缩会让块顶与它上方那块之间裂出 1px 天空缝
+    // （底边固定 → 缩是从上面缩，上一块不会跟着下来）
+    const dh = Math.max(0, Math.round(Math.sin(t * CLOUD.MORPH_W_TALL * m.hK + m.hPh)));
     const nw = Math.max(2, bw + dw);
     const nh = Math.max(2, bh + dh);
     return [Math.round(x + (bw - nw) / 2), y + (bh - nh), nw, nh];
@@ -468,10 +484,14 @@ export function morphCloud(c: PixelCloud, t: number): [number, number, number, n
 }
 
 /**
- * 像素云：**扫描线排叠**（3–7 排 2–4px 高的横条，自底向上收窄 + 单侧鼓包），确定性。
- * 排叠是经典像素云画法：轮廓由排宽变化自然形成，不会出现「长板 + 悬空方块」。
- * **每朵云的形状是各不相同的**：排数、每排收窄量与鼓包侧全随机。
- * （初版是 4 块写死的比例模板，后改大块拼接，作者两轮都说粗糙；排叠版才站住。）
+ * 像素云：**分瓣积云**（平底 + 2–4 个球瓣），确定性。
+ *
+ * 历史：4 块比例模板 → 大块拼接 → 扫描线排叠（3–7 排横条自底向上收窄）→ 分瓣。
+ * 排叠版解决了「悬空方块」，但它**只有宽度一个自由度**：一排一根横条，
+ * 不管怎么随机收窄，轮廓都是「一条长板 + 几个台阶」，1:1 下读作灰道道
+ * （2026-11-13 实拍：云高 8–12px、宽 150–300px，比例 15:1）。
+ * 分瓣把**竖直方向的第二个自由度**加回来：每朵云由 2–4 个椭圆瓣取并集，
+ * 轮廓在横向上有多个顶点 → 才有「积云」的体积感。
  */
 export function genClouds(
   w: number,
@@ -490,29 +510,91 @@ export function genClouds(
   const n = dense ? Math.round(11 + (cover - 0.6) * 30) : Math.round(3 + cover * 12);
   const clouds: PixelCloud[] = [];
   for (let i = 0; i < n; i++) {
-    const depth = rng() < 0.5 ? 0 : 1;
+    // 远近交替（不抽签）：随机抽签会让某一档天气恰好抽到全是近云/全是远云，
+    // 画面就只剩一层——而「远小近大」正是云的景深。i%2 保证两层永远都在。
+    const depth = i % 2;
     const cw0 = Math.round((depth ? 90 : 56) + rng() * (depth ? 110 : 60));
     const cw = dense ? Math.round(cw0 * 1.25) : cw0;
-    // 扫描线排叠（经典像素云画法）：云 = 3–7 排 2–4px 高的横条，
-    // 自底向上收窄（收窄量带噪声 → 圆顶轮廓）+ 个别排单侧鼓包。
-    // 旧版（大块拼接）怎么调都会剩「悬空方块」或「长板 + 碎屑」，只有排叠轮廓是自然的
-    const rows = 3 + Math.floor(rng() * 5);
-    const rowH = 2 + Math.floor(rng() * 3);
-    const ch = rows * rowH;
-    const blocks: [number, number, number, number][] = [];
-    for (let k = 0; k < rows; k++) {
-      const f = k / Math.max(1, rows - 1); // 0 = 底排 → 1 = 顶排
-      const inset = Math.round(cw * 0.4 * f * f * (0.55 + rng() * 0.9));
-      let li = inset;
-      let ri = inset;
-      if (rng() < 0.35) {
-        // 单侧鼓包：这排向左/右多伸出一点（云的胖瘦不均匀）
-        if (rng() < 0.5) li = Math.max(0, li - Math.round(cw * 0.08));
-        else ri = Math.max(0, ri - Math.round(cw * 0.08));
-      }
-      const bw2 = Math.max(6, cw - li - ri);
-      blocks.push([li, ch - (k + 1) * rowH, bw2, rowH]);
+    // 分瓣积云：一条平底 + 2–4 个球瓣（椭圆截面，取并集）
+    const baseH = rng() < 0.5 ? 2 : 4;
+    const lobeN = 2 + Math.floor(rng() * 3);
+    // 远层更扁：大气透视里远处的云被压扁，远近两层的形状语言要分开
+    const tallK = depth ? 1 : 0.78;
+    const lobes: { cx: number; r: number; lh: number }[] = [];
+    for (let k = 0; k < lobeN; k++) {
+      const r = cw * (0.20 + rng() * 0.14);
+      lobes.push({
+        // 瓣沿底宽铺开、中心带抖动（对称的云像图标）；中心夹在 [r, cw−r] 内，
+        // 否则贴边的瓣被云盒切掉一半 → 轮廓一侧是刀切的直线
+        cx: Math.min(cw - r, Math.max(r, cw * ((k + 0.5) / lobeN + (rng() - 0.5) * 0.14))),
+        r,
+        lh: Math.max(4, Math.round(cw * (0.16 + rng() * 0.16) * tallK)),
+      });
     }
+    const ch = Math.max(...lobes.map((l) => l.lh)) + baseH;
+
+    // 逐 2px 行求瓣的并集 → 行程编码（一行可以有多个不连续段 = 瓣之间的凹口）
+    const STEP = 2;
+    const rows = Math.ceil(ch / STEP);
+    const runsAt: [number, number][][] = [];
+    for (let r = 0; r < rows; r++) {
+      const rowBot = Math.min(ch, r * STEP + STEP);
+      const d = ch - baseH - rowBot; // 该行底边距底座顶的高度（<0 = 落在底座里）
+      const on = new Array<boolean>(cw).fill(false);
+      if (d < 0) {
+        on.fill(true); // 底座整行满宽 —— 云的平底
+      } else {
+        for (const l of lobes) {
+          if (d >= l.lh) continue;
+          const halfW = l.r * Math.sqrt(Math.max(0, 1 - (d / l.lh) ** 2));
+          const x0 = Math.max(0, Math.round(l.cx - halfW));
+          const x1 = Math.min(cw, Math.round(l.cx + halfW));
+          for (let x = x0; x < x1; x++) on[x] = true;
+        }
+      }
+      const runs: [number, number][] = [];
+      for (let x = 0; x < cw; ) {
+        if (!on[x]) {
+          x++;
+          continue;
+        }
+        let x2 = x + 1;
+        while (x2 < cw && on[x2]) x2++;
+        runs.push([x, x2]);
+        x = x2;
+      }
+      runsAt.push(runs);
+    }
+    // 纵向合并：同一 x 段跨行连续 → 一块（自下往上；单块 ≤4px 保持排叠手感）
+    const blocks: [number, number, number, number][] = [];
+    const open = new Map<string, { x0: number; x1: number; yTop: number; h: number }>();
+    for (let r = rows - 1; r >= 0; r--) {
+      const yTop = r * STEP;
+      const yBot = Math.min(ch, yTop + STEP);
+      const rh = yBot - yTop;
+      const seen = new Set<string>();
+      for (const [x0, x1] of runsAt[r]!) {
+        const key = x0 + ':' + x1;
+        seen.add(key);
+        const o = open.get(key);
+        if (o && o.yTop === yBot && o.h + rh <= 4) {
+          o.yTop = yTop;
+          o.h += rh;
+        } else {
+          if (o) blocks.push([o.x0, o.yTop, o.x1 - o.x0, o.h]);
+          open.set(key, { x0, x1, yTop, h: rh });
+        }
+      }
+      for (const [key, o] of [...open]) {
+        if (!seen.has(key)) {
+          blocks.push([o.x0, o.yTop, o.x1 - o.x0, o.h]);
+          open.delete(key);
+        }
+      }
+    }
+    for (const o of open.values()) blocks.push([o.x0, o.yTop, o.x1 - o.x0, o.h]);
+    // 底 → 顶、左 → 右：绘制顺序让底座先落、瓣后叠；blocks[0] 必须是那条平底
+    blocks.sort((a, b) => b[1] - a[1] || a[0] - b[0]);
     const morph: CloudMorph[] = blocks.map(() => ({
       wPh: rng() * Math.PI * 2,
       hPh: rng() * Math.PI * 2,

@@ -133,11 +133,15 @@ describe('genScenery：远山与湖面', () => {
     expect(minY(s.farRidge)).toBeGreaterThan(H * 0.7);
     expect(minY(s.nearRidge)).toBeGreaterThan(H * 0.7);
   });
-  it('远山比近山高（两层错开才有纵深），两层都不越界', () => {
+  it('远 / 中 / 近三层逐级更低（三层错开才有纵深），都不越界', () => {
     const s = genScenery(W, H);
     const minY = (p: [number, number][]) => Math.min(...p.map(([, y]) => y));
-    expect(minY(s.farRidge)).toBeLessThan(minY(s.nearRidge));
-    for (const p of [...s.farRidge, ...s.nearRidge]) {
+    expect(minY(s.farRidge)).toBeLessThan(minY(s.midRidge));
+    expect(minY(s.midRidge)).toBeLessThan(minY(s.nearRidge));
+    // 三层必须真的分开：挨在一起会糊成一条厚边（<6px 就没有「层」）
+    expect(minY(s.midRidge) - minY(s.farRidge)).toBeGreaterThan(6);
+    expect(minY(s.nearRidge) - minY(s.midRidge)).toBeGreaterThan(6);
+    for (const p of [...s.farRidge, ...s.midRidge, ...s.nearRidge]) {
       expect(p[1]).toBeLessThan(s.horizonY);
       expect(p[1]).toBeGreaterThan(0);
       expect(p[0]).toBeGreaterThanOrEqual(0);
@@ -310,24 +314,50 @@ describe('倒影：随波扭曲 + 柔化（2026-09-23 二轮「湖面倒影随�
       '破镜图案完全不随时间移动（冻结水纹）'
     ).toBeLessThan(75);
   });
-  it('云是排叠画法：底排满宽（平底）、排宽向上收窄（轮廓由排宽变化自然形成）', () => {
+  it('云是分瓣积云：平底满宽、向上分瓣（一行可以有多段）、块高 2–4px、没有悬空块', () => {
     for (const c of genClouds(W, H, 0.5)) {
-      const rows = c.blocks.length;
-      expect(rows, '排叠云至少 3 排').toBeGreaterThanOrEqual(3);
+      expect(c.blocks.length, '分瓣云至少 3 块').toBeGreaterThanOrEqual(3);
       const bottom = c.blocks[0]!;
       expect(bottom[0], '底排从左缘起（平底满宽）').toBe(0);
       expect(bottom[2]).toBe(c.w);
-      // 顶排必须比底排窄（圆顶轮廓，不许出现等宽塔）
-      const top = c.blocks[rows - 1]!;
-      expect(top[2]).toBeLessThan(bottom[2]);
-      // 每排高度 2–4px、各排首尾相接（排叠不脱节）
-      for (let k = 0; k < rows; k++) {
-        const [, y, , bh] = c.blocks[k]!;
+      expect(bottom[1] + bottom[3], '最低的一块必须贴云底').toBe(c.h);
+      // 块高 2–4px（2px 排 + 纵向合并，最多并两排）
+      for (const [, , , bh] of c.blocks) {
         expect(bh).toBeGreaterThanOrEqual(2);
         expect(bh).toBeLessThanOrEqual(4);
-        if (k > 0) expect(y).toBe(c.blocks[k - 1]![1] - bh);
       }
+      // 没有悬空块：除贴底那块外，每块下方必须有一块托着（历史上「长板 + 悬空方块」的坑）
+      for (const [bx, by, bw, bh] of c.blocks) {
+        if (by + bh >= c.h) continue;
+        const supported = c.blocks.some(
+          ([ox, oy, ow, oh]) =>
+            oy <= by + bh && oy + oh > by + bh && ox < bx + bw && bx < ox + ow
+        );
+        expect(supported, `块 [${bx},${by},${bw},${bh}] 悬空`).toBe(true);
+      }
+      // 比例：不许再出现 15:1 的长板（旧版实测 8–12px 高 / 150–300px 宽）
+      expect(c.w / c.h, `云宽高比 ${(c.w / c.h).toFixed(1)} 仍像长板`).toBeLessThanOrEqual(6);
     }
+    // 分瓣：暴露在外的「瓣顶」出现在 ≥2 个不同高度 = 这朵云有多个鼓包。
+    // 小云（cw 70 上下）两瓣高度接近、合成一个圆顶是正常的，所以按**比例**守，
+    // 不逐朵硬要求——真退化成「一排横条」时这个比例会掉到 0。
+    const multi = genClouds(W, H, 0.5).filter((c) => {
+      const caps = new Set(
+        c.blocks
+          .filter(
+            ([bx, by, bw]) =>
+              !c.blocks.some(
+                ([ox, oy, ow, oh]) => oy < by && oy + oh >= by && ox < bx + bw && bx < ox + ow
+              )
+          )
+          .map(([, by]) => by)
+      );
+      return caps.size >= 2;
+    }).length;
+    const all = genClouds(W, H, 0.5).length;
+    expect(multi / all, `只有 ${multi}/${all} 朵云是多瓣的（云又成了一排横条）`).toBeGreaterThanOrEqual(
+      0.6
+    );
   });
   it('参数哨兵：行步长 2、基准不透明度 ≤ 0.35、错位上限 ≤ 4（太大会把山形错碎）', () => {
     expect(REFLECT.STEP).toBeGreaterThanOrEqual(2);

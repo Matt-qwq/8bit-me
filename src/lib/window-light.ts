@@ -105,79 +105,12 @@ export function moonSpill(
   return { x0, x1, alphaTop, alphaLow };
 }
 
-// ---- ③ 玻璃上的室内反光 ----
-
-/** 低频双正弦漂移周期（26s / 47s @60fps） */
-const REFLECT_PERIOD_A = 1560;
-const REFLECT_PERIOD_B = 2820;
-
-/** 深夜才亮：黄昏/黎明的半亮天空上，反光斑最读作「悬浮的灰 UI 残片」 */
-export const REFLECT_STAR = 0.7;
-
-/** 核心几何：纵向灯柱晕（灯在玻璃上的竖直拉长光斑），不是横躺的方块 */
-const CORE_W = 12;
-const CORE_H = 26;
-
-/** 单层矩形（reflectionLayers 的输出） */
-export interface ReflectLayer {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  alpha: number;
-}
-
-/**
- * 夜里玻璃上的室内暖光反光斑（身后灯的倒影）；starlight < 0.7 返回 null。
- * 位置为相对玻璃的整数偏移，低频双正弦叠加漂移（振幅 ≤10px），
- * 核心尺寸 12×26 纵向灯柱、随呼吸低频 ±2；alpha 随 starlight 升至 ≤0.24。
- *
- * 2026-10-06 独立评审①二轮：旧 0.1 档的暖金盖不住夜空的蓝底（合成后 R−B
- * 仍为负，读作中性灰板）——灯的倒影本来就该是一团「亮」而不是一道「痕」，
- * alpha 提到 0.24（三层叠完 ≈0.40，R−B 转正）并把混白从 0.35 收到 0.15。
- */
-export function indoorReflection(
-  t: number,
-  starlight: number,
-  p: Palette
-): {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  alpha: number;
-  color: string;
-} | null {
-  if (starlight < REFLECT_STAR) return null;
-
-  const pa = (2 * Math.PI * t) / REFLECT_PERIOD_A;
-  const pb = (2 * Math.PI * t) / REFLECT_PERIOD_B;
-  const x = Math.round(Math.sin(pa) * 6 + Math.sin(pb) * 4); // 振幅 ≤10
-  const y = Math.round(Math.sin(pa) * 2 + Math.sin(pb) * 1); // 振幅 ≤3
-  const breath = Math.round(Math.sin(pb) * 2); // ±2
-  const w = CORE_W + breath;
-  const h = CORE_H + breath;
-  const alpha = round2(0.24 * clamp01((starlight - REFLECT_STAR) / (1 - REFLECT_STAR)));
-
-  return { x, y, w, h, alpha, color: lerpHex(p.accent, '#ffffff', 0.15) };
-}
-
-/**
- * 反光斑的三层软边：核心 + 两圈外扩降 alpha 的同心矩形。
- * 像素语言里没有高斯模糊——「光晕」= 外圈不是更淡的颜色，而是更稀的存在；
- * 硬边实心块悬在天空正中读作 UI 残片（2026-10-05 评审①），必须三层化。
- * 每圈向四边各扩 (3,6)/(6,12) px，alpha 乘 0.6 / 0.3（圈差小一层，边才软）。
- */
-export function reflectionLayers(core: ReflectLayer): ReflectLayer[] {
-  const ring = (dx: number, dy: number, k: number): ReflectLayer => ({
-    x: core.x - dx,
-    y: core.y - dy,
-    w: core.w + dx * 2,
-    h: core.h + dy * 2,
-    alpha: round2(core.alpha * k),
-  });
-  return [core, ring(3, 6, 0.6), ring(6, 12, 0.3)];
-}
+// ---- ③ 玻璃上的室内反光（已退役 2026-11-13）----
+// 原 indoorReflection / reflectionLayers：夜里在玻璃上画一盏「身后那盏灯的倒影」。
+// 作者实拍裁决「去掉，无法辨认是什么东西」——它在夜空里无论怎么调（1px 线 →
+// 三层软边 → 纵向灯柱 → 点阵外圈）都读作第二个天体（「天空最上面是月亮，
+// 下面还有个像太阳的东西」）。认不出来的光学层比没有更糟，整段删除。
+// 玻璃的物性改由 ④ 冷罩 / 结露 / 起雾 + 雨梳痕承担。
 
 // ---- ④ 玻璃冷色罩 / 结露 / 起雾 ----
 
